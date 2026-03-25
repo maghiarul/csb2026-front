@@ -3,6 +3,7 @@ import { StyleSheet, Text, View, TouchableOpacity, Image, Button, TextInput, Act
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { MOCK_PLANTS } from '../services/plantData'; // Importă datele despre plante (pentru Enciclopedie)
 import { useLocation } from '../services/LocationContext';
+import api from '../services/api'; // Importăm serviciul API creat anterior
 
 export default function CameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -26,6 +27,61 @@ const { coords } = useLocation();
     );
   }
 
+    const savePOIToServer = async () => {
+  if (!coords || !identifiedPlant || !photo) {
+    Alert.alert("Eroare", "Lipsesc date (locație, plantă sau poză)!");
+    return;
+  }
+
+  setIsAnalyzing(true); // Folosim loading-ul și pentru salvare
+
+  try {
+    const formData = new FormData();
+    
+    // Căutăm ID-ul plantei din MOCK_PLANTS bazat pe numele selectat
+    const plant = MOCK_PLANTS.find(p => p.name === identifiedPlant);
+    const plantId = plant ? plant.id : "1";
+
+    // Adăugăm datele text conform cerințelor API
+    formData.append('plant_id', plantId);
+    formData.append('latitude', coords.lat.toString());
+    formData.append('longitude', coords.lng.toString());
+    formData.append('comment', comment);
+
+    // Formatul special de imagine pentru React Native + Axios
+    const filename = photo.split('/').pop();
+    const match = /\.(\w+)$/.exec(filename || '');
+    const type = match ? `image/${match[1]}` : `image`;
+
+    // @ts-ignore
+    formData.append('image', {
+      uri: photo,
+      name: filename,
+      type: type,
+    });
+
+    // Trimitem cererea POST către /poi
+    await api.post('/poi', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+
+    Alert.alert(
+      "Succes! 🎉", 
+      "Punctul a fost trimis. Va apărea pe hartă imediat ce un Admin îl aprobă!"
+    );
+    
+    // Resetăm formularul după succes
+    setPhoto(null);
+    setIdentifiedPlant(null);
+    setComment('');
+  } catch (error: any) {
+    console.error(error);
+    Alert.alert("Eroare la salvare", error.response?.data?.detail || "Serverul nu a putut procesa cererea.");
+  } finally {
+    setIsAnalyzing(false);
+  }
+};
+    
   const takePicture = async () => {
     if (cameraRef.current) {
       const photoData = await cameraRef.current.takePictureAsync({ quality: 0.5 }); // Calitate mai mică pentru a trimite rapid pe net
@@ -85,24 +141,7 @@ if (photo) {
           ) : (
             <Button 
   title="🚀 Salvează Punct" 
-  onPress={() => {
-    // Verificăm dacă avem coordonate înainte de a salva
-    if (!coords) {
-      Alert.alert("Eroare", "Te rugăm să alegi mai întâi locația pe hartă!");
-      return;
-    }
-
-    Alert.alert(
-      "🌿 Punct de Interes Creat!", 
-      `Plantă: ${identifiedPlant}\n` +
-      `Locație: ${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}\n` +
-      `Comentariu: ${comment}\n\n` +
-      `Gata de trimis la FastAPI!`
-    );
-    
-    // Aici, mai târziu, vei adăuga codul de trimitere reală către colegul tău:
-    // sendToBackend({ photo, identifiedPlant, comment, coords });
-  }} 
+  onPress={savePOIToServer} 
   color="#007bff" 
 />
           )}

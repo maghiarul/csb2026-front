@@ -4,6 +4,7 @@ import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location'; 
 import { useLocation } from '../services/LocationContext';
 import { MOCK_LOCATIONS, MOCK_PLANTS } from '../services/plantData';
+import api from '../services/api'; // Importăm serviciul API creat anterior
 
 export default function MapComponent() {
   const webViewRef = useRef<WebView>(null);
@@ -11,6 +12,35 @@ export default function MapComponent() {
   const [activeFilter, setActiveFilter] = useState('Toate');
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const { setCoords } = useLocation();
+
+  // --- LOGICA PENTRU SERVER (API) ---
+
+  // Funcția mutată ÎN INTERIORUL componentei pentru a avea acces la state-uri
+  const fetchNearbyPOIs = async (radius: number = 5) => {
+    try {
+      const lat = selectedLocation?.lat || 45.4353;
+      const lng = selectedLocation?.lng || 28.0079;
+
+      // Cerere reală către FastAPI folosind parametrii din Postman
+      const response = await api.get(`/poi`, {
+        params: {
+          lat: lat,
+          lng: lng,
+          radius_km: radius
+        }
+      });
+
+      const points = JSON.stringify(response.data);
+      webViewRef.current?.injectJavaScript(`updateMarkers('${points}'); true;`);
+      
+      Alert.alert("Scanare Completă", `Am găsit ${response.data.length} puncte de interes în raza de ${radius} km.`);
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Eroare Server", "Asigură-te că backend-ul este pornit și IP-ul în api.ts este corect.");
+    }
+  };
+
+  // --- LOGICA HARTĂ ---
 
   const mapHTML = `
     <!DOCTYPE html>
@@ -36,7 +66,7 @@ export default function MapComponent() {
           markersLayer.clearLayers();
           const locations = JSON.parse(locationsJson);
           locations.forEach(loc => {
-            L.marker([loc.lat, loc.lng]).addTo(markersLayer).bindPopup("<b>" + loc.name + "</b>");
+            L.marker([loc.lat, loc.lng]).addTo(markersLayer).bindPopup("<b>" + (loc.name || loc.plant?.name || "Plantă") + "</b>");
           });
         }
 
@@ -88,9 +118,15 @@ export default function MapComponent() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.filterContainer}>
+      <View style={styles.filterArea}>
+        {/* Butonul de Filtru Plantă */}
         <TouchableOpacity style={styles.mainFilterButton} onPress={() => setIsMenuVisible(true)}>
-          <Text style={styles.mainFilterText} numberOfLines={1} ellipsizeMode='tail'>🔍 Filtrează: {activeFilter}</Text>
+          <Text style={styles.mainFilterText} numberOfLines={1} ellipsizeMode='tail'>🔍 {activeFilter}</Text>
+        </TouchableOpacity>
+
+        {/* Butonul nou pentru Scanare Spațială (5km) */}
+        <TouchableOpacity style={styles.scanButton} onPress={() => fetchNearbyPOIs(5)}>
+          <Text style={styles.scanButtonText}>📡 Scan 5km</Text>
         </TouchableOpacity>
       </View>
 
@@ -103,9 +139,7 @@ export default function MapComponent() {
               keyExtractor={(item) => item}
               renderItem={({ item }) => (
                 <TouchableOpacity style={styles.menuItem} onPress={() => handleFilterSelect(item)}>
-                  <Text style={[styles.menuItemText, activeFilter === item && styles.activeMenuText]}>
-                    {item}
-                  </Text>
+                  <Text style={[styles.menuItemText, activeFilter === item && styles.activeMenuText]}>{item}</Text>
                 </TouchableOpacity>
               )}
             />
@@ -138,28 +172,35 @@ export default function MapComponent() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  filterContainer: {
+  filterArea: {
     position: 'absolute',
-    top: 70, // Coborât destul sub notch
+    top: 70,
     left: 20,
-      right: 20,
-    alignItems: 'center',
+    right: 20,
+    flexDirection: 'row',
+    justifyContent: 'center',
     zIndex: 10,
   },
   mainFilterButton: {
     backgroundColor: '#fff',
-      padding: 12,
-    paddingHorizontal: 20,
+    padding: 12,
+    paddingHorizontal: 15,
     borderRadius: 12,
     elevation: 5,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowOffset: { width: 0, height: 2 },
     borderWidth: 1,
-      borderColor: '#2e7d32',
-    maxWidth: 250
+    borderColor: '#2e7d32',
+    maxWidth: 150,
+    marginRight: 10,
   },
-  mainFilterText: { color: '#2e7d32', fontWeight: 'bold', fontSize: 16, textAlign: 'center' },
+  scanButton: {
+    backgroundColor: '#007bff', // Albastru pentru Scanare
+    padding: 12,
+    borderRadius: 12,
+    elevation: 5,
+    minWidth: 100,
+  },
+  scanButtonText: { color: '#fff', fontWeight: 'bold', textAlign: 'center' },
+  mainFilterText: { color: '#2e7d32', fontWeight: 'bold', fontSize: 14, textAlign: 'center' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
   menuContent: {
     width: '80%',
@@ -169,7 +210,7 @@ const styles = StyleSheet.create({
     maxHeight: '60%',
     elevation: 10,
   },
-  menuTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, color: '#333', textAlign: 'center' },
+  menuTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
   menuItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#eee' },
   menuItemText: { fontSize: 16, color: '#444' },
   activeMenuText: { color: '#2e7d32', fontWeight: 'bold' },
