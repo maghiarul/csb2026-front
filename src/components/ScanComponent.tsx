@@ -36,6 +36,7 @@ export default function ScanComponent() {
   const analyzePlant = async () => {
     if (!photoUri) return;
     setIsAnalyzing(true);
+    
     try {
       const formData = new FormData();
       formData.append('image', {
@@ -44,30 +45,41 @@ export default function ScanComponent() {
         type: 'image/jpeg',
       } as any);
 
+      console.log("Trimit imaginea spre analiză...");
+
       const response = await api.post('/identify', formData, {
-        transformRequest: (data) => data,
+        headers: { 'Content-Type': 'multipart/form-data' },
+        transformRequest: (data) => data, 
       });
 
       if (response.status === 200) {
-        setResult(response.data);
+        console.log("AI-ul a răspuns:", response.data);
+        setResult(response.data); 
       }
     } catch (error: any) {
-      Alert.alert("Eroare AI", "Serverul AI (port 9999) nu răspunde.");
+      console.log("EROARE IDENTIFICARE:", error.response?.data || error.message);
+      Alert.alert("Eroare", "Serverul nu a putut analiza imaginea. Verifică consola pentru detalii.");
     } finally {
       setIsAnalyzing(false);
     }
   };
 
-  // NOU: Funcție pentru a salva punctul pe hartă după identificare
+  // Funcție pentru a salva punctul pe hartă după identificare
   const savePointToDatabase = async () => {
     if (!coords || !result) return;
     setIsSaving(true);
     try {
       const formData = new FormData();
+      
       formData.append('latitude', coords.lat.toString());
       formData.append('longitude', coords.lng.toString());
-      formData.append('plant_id', result.plant_id.toString());
-      formData.append('comment', `Identificat prin scanare: ${result.plant_name}`);
+      
+      // Din poza ta de Postman, serverul trimite plant_id și plant_name
+      const pId = result.plant_id ? result.plant_id.toString() : "1";
+      const pName = result.plant_name || "Plantă necunoscută";
+      
+      formData.append('plant_id', pId);
+      formData.append('comment', `Identificat prin scanare: ${pName}`);
       
       // Trimitem aceeași poză și la POI
       formData.append('image', {
@@ -79,7 +91,8 @@ export default function ScanComponent() {
       await api.post('/poi', formData, { transformRequest: (data) => data });
       Alert.alert("Succes! 🎉", "Planta a fost marcată pe hartă.");
       resetScan();
-    } catch (e) {
+    } catch (e: any) {
+      console.log("EROARE SALVARE POI:", e.response?.data || e.message);
       Alert.alert("Eroare", "Nu am putut salva locația în baza de date.");
     } finally {
       setIsSaving(false);
@@ -97,8 +110,10 @@ export default function ScanComponent() {
         <Image source={{ uri: photoUri! }} style={styles.previewImage} />
         <View style={styles.resultCard}>
           <Text style={styles.resultTitle}>Rezultat Analiză</Text>
-          <Text style={styles.plantName}>{result.plant_name}</Text>
-          <Text style={styles.confidence}>Acuratețe: {(result.confidence * 100).toFixed(1)}%</Text>
+          <Text style={styles.plantName}>{result.plant_name || "Nume Necunoscut"}</Text>
+          {result.confidence && (
+            <Text style={styles.confidence}>Acuratețe: {(result.confidence * 100).toFixed(1)}%</Text>
+          )}
           
           {coords && (
             <TouchableOpacity 
