@@ -12,10 +12,17 @@ export default function AdminScreen() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const usersRes = await api.get('/admin/users'); // Rută Admin
-      const poisRes = await api.get('/poi'); // Rută publică
+      const usersRes = await api.get('/admin/users'); 
+      const poisRes = await api.get('/poi', { 
+        params: { lat: 45.4353, lng: 28.0079, radius_km: 50 } 
+      });
+      
       setUsers(usersRes.data);
       setPois(poisRes.data);
+
+      console.log("Primul User din listă arată așa:", usersRes.data[0]);
+      console.log("Primul Punct din listă arată așa:", poisRes.data[0]);
+
     } catch (error) {
       console.error(error);
       Alert.alert("Eroare", "Nu am putut prelua datele de admin.");
@@ -28,26 +35,26 @@ export default function AdminScreen() {
 
   const deleteUser = (userId: string) => {
     Alert.alert("Confirmare", "Sigur vrei să ștergi acest utilizator?", [
-      { text: "Anulează" },
-      { text: "Șterge", onPress: async () => {
+      { text: "Anulează", style: "cancel" },
+      { text: "Șterge", style: "destructive", onPress: async () => {
           try {
             await api.delete(`/admin/users/${userId}`); 
             Alert.alert("Succes", "Utilizator șters.");
             fetchData();
-          } catch (e) { Alert.alert("Eroare", "Ștergerea nu este implementată pe backend."); }
+          } catch (e) { Alert.alert("Eroare", "Ștergerea nu a funcționat."); }
       }}
     ]);
   };
 
   const deletePOI = (poiId: string) => {
     Alert.alert("Confirmare", "Sigur vrei să ștergi acest punct?", [
-      { text: "Anulează" },
-      { text: "Șterge", onPress: async () => {
+      { text: "Anulează", style: "cancel" },
+      { text: "Șterge", style: "destructive", onPress: async () => {
           try {
-            await api.delete(`/poi/${poiId}`);
+            await api.delete(`/admin/poi/${poiId}`);
             Alert.alert("Succes", "Punct șters.");
             fetchData();
-          } catch (e) { Alert.alert("Eroare", "Backend-ul nu suportă încă ștergerea POI."); }
+          } catch (e) { Alert.alert("Eroare", "Verifică dacă ești logat ca admin."); }
       }}
     ]);
   };
@@ -80,9 +87,18 @@ export default function AdminScreen() {
           keyExtractor={(item: any) => item.id.toString()}
           renderItem={({ item }) => (
             <View style={styles.card}>
-              <View>
-                <Text style={styles.cardTitle}>{activeTab === 'users' ? item.username : (item.plant?.name || "Punct Nou")}</Text>
-                <Text style={styles.cardSubtitle}>{activeTab === 'users' ? item.email : `Lat: ${item.latitude}, Lng: ${item.longitude}`}</Text>
+              <View style={{flex: 1}}>
+                <Text style={styles.cardTitle}>
+                  {activeTab === 'users' 
+                    ? (item.email || item.username || `User #${item.id}`) 
+                    : (item.plant?.name_ro || item.plant?.name || `Plantă ID: ${item.plant_id || 'Necunoscut'}`)}
+                </Text>
+                
+                <Text style={styles.cardSubtitle}>
+                  {activeTab === 'users' 
+                    ? `ID: ${item.id}` 
+                    : `Lat: ${item.latitude || item.lat}, Lng: ${item.longitude || item.lng}`}
+                </Text>
               </View>
               <TouchableOpacity 
                 style={styles.deleteButton} 
@@ -111,6 +127,6 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', padding: 15, borderRadius: 10, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', elevation: 2 },
   cardTitle: { fontSize: 16, fontWeight: 'bold' },
   cardSubtitle: { fontSize: 14, color: '#666' },
-  deleteButton: { backgroundColor: '#ffeded', padding: 8, borderRadius: 5, borderWidth: 1, borderColor: '#ff4444' },
+  deleteButton: { backgroundColor: '#ffeded', padding: 8, borderRadius: 5, borderWidth: 1, borderColor: '#ff4444', marginLeft: 10 },
   deleteText: { color: '#ff4444', fontWeight: 'bold', fontSize: 12 }
 });

@@ -1,47 +1,85 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Alert, SafeAreaView, Modal, FlatList } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location'; 
 import { useLocation } from '../services/LocationContext';
-import { MOCK_LOCATIONS, MOCK_PLANTS } from '../services/plantData';
-import api from '../services/api'; // Importăm serviciul API creat anterior
+import { MOCK_PLANTS } from '../services/plantData';
+import api from '../services/api'; 
 
 export default function MapComponent() {
   const webViewRef = useRef<WebView>(null);
   const [selectedLocation, setSelectedLocation] = useState<{lat: number, lng: number} | null>(null);
-  const [activeFilter, setActiveFilter] = useState('FILTRE');
+  const [markers, setMarkers] = useState<any[]>([]);
+  const [activeFilterName, setActiveFilterName] = useState('Toate');
+  const [activeFilterId, setActiveFilterId] = useState<string | number | null>(null);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
+  
   const { setCoords } = useLocation();
 
-  // --- LOGICA PENTRU SERVER (API) ---
-
-  // Funcția mutată ÎN INTERIORUL componentei pentru a avea acces la state-uri
+  // --- GET: Aduce punctele pe hartă ---
   const fetchNearbyPOIs = async (radius: number = 5) => {
     try {
       const lat = selectedLocation?.lat || 45.4353;
       const lng = selectedLocation?.lng || 28.0079;
 
-      // Cerere reală către FastAPI folosind parametrii din Postman
-      const response = await api.get(`/poi`, {
-        params: {
-          lat: lat,
-          lng: lng,
-          radius_km: radius
-        }
-      });
+      let url = `/poi?lat=${lat}&lng=${lng}&radius_km=${radius}`;
+      if (activeFilterId && activeFilterId !== 'all') {
+        url += `&plant_id=${activeFilterId}`;
+      }
 
-      const points = JSON.stringify(response.data);
-      webViewRef.current?.injectJavaScript(`updateMarkers('${points}'); true;`);
+      const response = await api.get(url);
+      setMarkers(response.data);
+      const pointsStr = JSON.stringify(response.data);
       
-      Alert.alert("Scanare Completă", `Am găsit ${response.data.length} puncte de interes în raza de ${radius} km.`);
+      if (webViewRef.current) {
+        webViewRef.current.injectJavaScript(`updateMarkers('${pointsStr}'); true;`);
+      }
+      Alert.alert("Harta Actualizată", `Am găsit ${response.data.length} puncte.`);
     } catch (error) {
-      console.error(error);
-      Alert.alert("Eroare Server", "Asigură-te că backend-ul este pornit și IP-ul în api.ts este corect.");
+      console.error("Eroare Scan:", error);
     }
   };
 
-  // --- LOGICA HARTĂ ---
+  // --- DELETE: Ștergere pentru Admin ---
+  const handleDeletePOI = (poiId: number) => {
+    Alert.alert(
+      "Confirmare Admin",
+      "Sigur vrei să elimini acest punct de pe hartă?",
+      [
+        { text: "Anulează", style: "cancel" },
+        { 
+          text: "Șterge", 
+          style: "destructive", 
+          onPress: async () => {
+            try {
+              await api.delete(`/admin/poi/${poiId}`);
+              const updated = markers.filter(m => m.id !== poiId);
+              setMarkers(updated);
+              webViewRef.current?.injectJavaScript(`updateMarkers('${JSON.stringify(updated)}'); true;`);
+              Alert.alert("Succes", "Punctul a fost șters.");
+            } catch (error) {
+              Alert.alert("Eroare", "Eroare la ștergere. Ești admin?");
+            }
+          }
+        }
+      ]
+    );
+  };
 
+  // --- PREGĂTIRE PUNCT (Fără POST) ---
+  const handleSetPoint = () => {
+    if (!selectedLocation) return;
+
+    // Salvăm doar local în memorie (LocationContext)
+    setCoords(selectedLocation); 
+    
+    Alert.alert(
+      "📍 Locație Pregătită!", 
+      "Am memorat acest punct. Mergi la tab-ul 'Scanează' pentru a face o poză plantei și a salva totul pe hartă."
+    );
+  };
+
+  // --- HTML HARTĂ ---
   const mapHTML = `
     <!DOCTYPE html>
     <html>
@@ -49,10 +87,7 @@ export default function MapComponent() {
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
       <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
       <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-      <style>
-        body { padding: 0; margin: 0; }
-        #map { height: 100vh; width: 100vw; }
-      </style>
+      <style> body { padding: 0; margin: 0; } #map { height: 100vh; width: 100vw; } </style>
     </head>
     <body>
       <div id="map"></div>
@@ -66,7 +101,14 @@ export default function MapComponent() {
           markersLayer.clearLayers();
           const locations = JSON.parse(locationsJson);
           locations.forEach(loc => {
-            L.marker([loc.lat, loc.lng]).addTo(markersLayer).bindPopup("<b>" + (loc.name || loc.plant?.name || "Plantă") + "</b>");
+            const lat = loc.lat || loc.latitude;
+            const lng = loc.lng || loc.longitude;
+            
+            const popupContent = "<b>" + (loc.plant?.name_ro || "Plantă") + "</b><br>" +
+                                 "<button onclick=\\"window.ReactNativeWebView.postMessage(JSON.stringify({type: 'delete_poi', id: " + loc.id + "}))\\" " +
+                                 "style='margin-top:10px; color:red; border:1px solid red; background:white; padding:5px; border-radius:4px;'>Șterge (Admin)</button>";
+
+            L.marker([lat, lng]).addTo(markersLayer).bindPopup(popupContent);
           });
         }
 
@@ -86,64 +128,57 @@ export default function MapComponent() {
     </html>
   `;
 
-  const handleFilterSelect = (filterName: string) => {
-    setActiveFilter(filterName);
-    setIsMenuVisible(false);
-    const filtered = filterName === 'Toate' 
-      ? MOCK_LOCATIONS 
-      : MOCK_LOCATIONS.filter(l => l.name === filterName);
-    webViewRef.current?.injectJavaScript(`updateMarkers('${JSON.stringify(filtered)}'); true;`);
-  };
-
   const handleMessage = (event: any) => {
     const data = JSON.parse(event.nativeEvent.data);
-    if (data.type === 'map_click') { setSelectedLocation({ lat: data.lat, lng: data.lng }); }
+    if (data.type === 'map_click') setSelectedLocation({ lat: data.lat, lng: data.lng });
+    if (data.type === 'delete_poi') handleDeletePOI(data.id);
   };
 
   const getCurrentLocation = async () => {
     let { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') return;
     let location = await Location.getCurrentPositionAsync({});
-    const { latitude, longitude } = location.coords;
-    setSelectedLocation({ lat: latitude, lng: longitude });
-    webViewRef.current?.injectJavaScript(`setViewAndMarker(${latitude}, ${longitude}); true;`);
+    setSelectedLocation({ lat: location.coords.latitude, lng: location.coords.longitude });
+    webViewRef.current?.injectJavaScript(`setViewAndMarker(${location.coords.latitude}, ${location.coords.longitude}); true;`);
   };
 
-  const handleSetPoint = () => {
-    if (selectedLocation) {
-      setCoords(selectedLocation);
-      Alert.alert("Locație Salvată!", "Mergi la tab-ul 'Scanează'.");
-    }
-  };
+  useEffect(() => { fetchNearbyPOIs(5); }, [activeFilterId]);
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.filterArea}>
-        {/* Butonul de Filtru Plantă */}
         <TouchableOpacity style={styles.mainFilterButton} onPress={() => setIsMenuVisible(true)}>
-          <Text style={styles.mainFilterText} numberOfLines={1} ellipsizeMode='tail'>🔍 {activeFilter}</Text>
+          <Text style={styles.mainFilterText} numberOfLines={1}>🔍 {activeFilterName}</Text>
         </TouchableOpacity>
-
-        {/* Butonul nou pentru Scanare Spațială (5km) */}
-              <TouchableOpacity 
-  style={styles.scanPill} 
-  onPress={() => fetchNearbyPOIs(5)} // Aceasta e funcția care apelează query-ul cu radius_km=5
->
-  <Text style={styles.scanIcon}>📡</Text>
-  <Text style={styles.scanText}>Explorează zona (5km)</Text>
-</TouchableOpacity>
+        <TouchableOpacity style={styles.scanButton} onPress={() => fetchNearbyPOIs(5)}>
+          <Text style={styles.scanButtonText}>📡 Scan 5km</Text>
+        </TouchableOpacity>
       </View>
 
       <Modal visible={isMenuVisible} animationType="fade" transparent={true}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setIsMenuVisible(false)}>
           <View style={styles.menuContent}>
-            <Text style={styles.menuTitle}>Alege planta:</Text>
+            <Text style={styles.menuTitle}>Filtrează Harta:</Text>
             <FlatList
-              data={['Toate', ...MOCK_PLANTS.map(p => p.name)]}
-              keyExtractor={(item) => item}
+              data={[{ id: 'all', name: 'Toate Plantele' }, ...MOCK_PLANTS]} 
+              keyExtractor={(item: any) => item.id.toString()}
               renderItem={({ item }) => (
-                <TouchableOpacity style={styles.menuItem} onPress={() => handleFilterSelect(item)}>
-                  <Text style={[styles.menuItemText, activeFilter === item && styles.activeMenuText]}>{item}</Text>
+                <TouchableOpacity 
+                  style={styles.menuItem} 
+                  onPress={() => {
+                    if (item.id === 'all') {
+                      setActiveFilterName('Toate');
+                      setActiveFilterId(null);
+                    } else {
+                      setActiveFilterName(item.name);
+                      setActiveFilterId(item.id);
+                    }
+                    setIsMenuVisible(false);
+                  }}
+                >
+                  <Text style={[styles.menuItemText, activeFilterName === (item.name === 'Toate Plantele' ? 'Toate' : item.name) && styles.activeMenuText]}>
+                    {item.name}
+                  </Text>
                 </TouchableOpacity>
               )}
             />
@@ -151,116 +186,36 @@ export default function MapComponent() {
         </TouchableOpacity>
       </Modal>
 
-      <WebView
-        ref={webViewRef}
-        source={{ html: mapHTML }}
-        onMessage={handleMessage}
-        onLoad={() => webViewRef.current?.injectJavaScript(`updateMarkers('${JSON.stringify(MOCK_LOCATIONS)}'); true;`)}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-      />
+      <WebView ref={webViewRef} source={{ html: mapHTML }} onMessage={handleMessage} javaScriptEnabled={true} />
       
-      <View style={styles.floatingContainer}>
-  <TouchableOpacity style={styles.fab} onPress={getCurrentLocation}>
-    <Text style={{fontSize: 24}}>🎯</Text>
-  </TouchableOpacity>
-  
-  {selectedLocation && (
-    <TouchableOpacity style={[styles.fab, styles.saveFab]} onPress={handleSetPoint}>
-      <Text style={{fontSize: 24}}>📍</Text>
-    </TouchableOpacity>
-  )}
-</View>
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity style={styles.gpsButton} onPress={getCurrentLocation}>
+          <Text style={{fontSize: 24}}>🎯</Text>
+        </TouchableOpacity>
+        {selectedLocation && (
+          <TouchableOpacity style={styles.setPointButton} onPress={handleSetPoint}>
+            <Text style={{fontSize: 24, color: '#fff'}}>📍</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-    floatingContainer: { position: 'absolute', bottom: 115, right: 20, gap: 15 },
-    saveFab: { 
-    backgroundColor: '#2e7d32' // Verdele tău principal pentru butonul de salvare
-  },
-fab: { 
-  width: 60, height: 60, borderRadius: 30, backgroundColor: '#fff', 
-  justifyContent: 'center', alignItems: 'center', elevation: 8,
-  shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 5
-},
   container: { flex: 1, backgroundColor: '#fff' },
-  
-  filterArea: {
-    position: 'absolute',
-    top: 70,
-    left: 20,
-    right: 20,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
-  mainFilterButton: {
-    backgroundColor: '#fff',
-    padding: 12,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-    elevation: 5,
-      borderWidth: 1,
-      borderColor: 'rgba(46, 125, 50, 0.2)',
-      shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    maxWidth: 150,
-    marginRight: 10,
-  },
-  scanButtonText: { color: '#fff', fontWeight: 'bold', textAlign: 'center' },
-  mainFilterText: { color: '#2e7d32', fontWeight: 'bold', fontSize: 14, textAlign: 'center' },
+  filterArea: { position: 'absolute', top: 70, left: 20, right: 20, flexDirection: 'row', justifyContent: 'center', zIndex: 10 },
+  mainFilterButton: { backgroundColor: '#fff', padding: 12, borderRadius: 25, elevation: 5, marginRight: 10, minWidth: 120 },
+  scanButton: { backgroundColor: '#fff', padding: 12, borderRadius: 25, elevation: 5 },
+  mainFilterText: { color: '#2e7d32', fontWeight: 'bold', textAlign: 'center' },
+  scanButtonText: { color: '#2e7d32', fontWeight: 'bold', textAlign: 'center' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
-  menuContent: {
-    width: '80%',
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 20,
-    maxHeight: '60%',
-    elevation: 10,
-  },
+  menuContent: { width: '80%', backgroundColor: '#fff', borderRadius: 20, padding: 20, maxHeight: '60%' },
   menuTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
   menuItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#eee' },
   menuItemText: { fontSize: 16, color: '#444' },
   activeMenuText: { color: '#2e7d32', fontWeight: 'bold' },
-  buttonContainer: {
-    position: 'absolute',
-    bottom: 40,
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-evenly',
-  },
-  gpsButton: { backgroundColor: '#fff', padding: 15, borderRadius: 25, elevation: 5 },
-  setPointButton: { backgroundColor: '#2e7d32', padding: 15, borderRadius: 25, elevation: 5 },
-    buttonText: { fontWeight: 'bold', color: '#333' },
-  scanPill: {
-    position: 'absolute',
-    top: 50, // Sub status bar
-    alignSelf: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(46, 125, 50, 0.2)',
-  },
-  scanIcon: {
-    fontSize: 18,
-    marginRight: 8,
-  },
-  scanText: {
-    color: '#2e7d32',
-    fontWeight: '800',
-    fontSize: 14,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  }
+  buttonContainer: { position: 'absolute', bottom: 120, right: 20, gap: 15 },
+  gpsButton: { backgroundColor: '#fff', width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 8 },
+  setPointButton: { backgroundColor: '#2e7d32', width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 8 }
 });

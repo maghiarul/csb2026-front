@@ -20,4 +20,8 @@ export const setAuthToken = (token: string | null) => {
   }
 };
 
+// Adaugă astea în serviciul tău de API
+export const deletePOI = (poiId: number) => api.delete(`/admin/poi/${poiId}`);
+export const deleteUser = (userId: number) => api.delete(`/admin/users/${userId}`);
+
 export default api;

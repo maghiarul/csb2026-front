@@ -2,12 +2,11 @@ import React, { useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text } from 'react-native';
-
+import ScanComponent from './src/components/ScanComponent';
 import { LocationProvider } from './src/services/LocationContext'; 
 import RegisterScreen from './src/screens/RegisterScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import MapComponent from './src/components/MapComponent';
-import CameraScreen from './src/screens/CameraScreen';
 import PlantListScreen from './src/screens/PlantListScreen';
 import AdminScreen from './src/screens/AdminPanel'; // Verifică dacă fișierul se numește AdminScreen sau AdminPanel
 import SplashScreen from './src/screens/SplashScreen';
@@ -75,7 +74,7 @@ if (showSplash) return <SplashScreen onFinish={() => setShowSplash(false)} />;
   }}
 >
           <Tab.Screen name="Hartă" component={MapComponent} options={{ tabBarIcon: () => <Text>🗺️</Text> }} />
-          <Tab.Screen name="Scanează" component={CameraScreen} options={{ tabBarIcon: () => <Text>📸</Text> }} />
+          <Tab.Screen name="Scanează" component={ScanComponent} options={{ tabBarIcon: () => <Text>📸</Text> }} />
           <Tab.Screen name="Enciclopedie" component={PlantListScreen} options={{ tabBarIcon: () => <Text>🌿</Text> }} />
           
           {isAdmin && (

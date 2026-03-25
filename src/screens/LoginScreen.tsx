@@ -9,8 +9,8 @@ interface LoginProps {
 }
 
 export default function LoginScreen({ onLoginSuccess, onGoToRegister }: LoginProps) {
-  const [email, setEmail] = useState(''); 
-  const [password, setPassword] = useState('');   
+  const [email, setEmail] = useState('test12@gmail.com'); 
+  const [password, setPassword] = useState('test01223');   
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
