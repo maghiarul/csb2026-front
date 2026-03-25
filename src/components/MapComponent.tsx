@@ -9,7 +9,7 @@ import api from '../services/api'; // Importăm serviciul API creat anterior
 export default function MapComponent() {
   const webViewRef = useRef<WebView>(null);
   const [selectedLocation, setSelectedLocation] = useState<{lat: number, lng: number} | null>(null);
-  const [activeFilter, setActiveFilter] = useState('Toate');
+  const [activeFilter, setActiveFilter] = useState('FILTRE');
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   const { setCoords } = useLocation();
 
@@ -125,9 +125,13 @@ export default function MapComponent() {
         </TouchableOpacity>
 
         {/* Butonul nou pentru Scanare Spațială (5km) */}
-        <TouchableOpacity style={styles.scanButton} onPress={() => fetchNearbyPOIs(5)}>
-          <Text style={styles.scanButtonText}>📡 Scan 5km</Text>
-        </TouchableOpacity>
+              <TouchableOpacity 
+  style={styles.scanPill} 
+  onPress={() => fetchNearbyPOIs(5)} // Aceasta e funcția care apelează query-ul cu radius_km=5
+>
+  <Text style={styles.scanIcon}>📡</Text>
+  <Text style={styles.scanText}>Explorează zona (5km)</Text>
+</TouchableOpacity>
       </View>
 
       <Modal visible={isMenuVisible} animationType="fade" transparent={true}>
@@ -156,22 +160,33 @@ export default function MapComponent() {
         domStorageEnabled={true}
       />
       
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity style={styles.gpsButton} onPress={getCurrentLocation}>
-          <Text style={styles.buttonText}>📍 Locația Mea</Text>
-        </TouchableOpacity>
-        {selectedLocation && (
-          <TouchableOpacity style={styles.setPointButton} onPress={handleSetPoint}>
-            <Text style={styles.buttonText}>✅ Set Point</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      <View style={styles.floatingContainer}>
+  <TouchableOpacity style={styles.fab} onPress={getCurrentLocation}>
+    <Text style={{fontSize: 24}}>🎯</Text>
+  </TouchableOpacity>
+  
+  {selectedLocation && (
+    <TouchableOpacity style={[styles.fab, styles.saveFab]} onPress={handleSetPoint}>
+      <Text style={{fontSize: 24}}>📍</Text>
+    </TouchableOpacity>
+  )}
+</View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+    floatingContainer: { position: 'absolute', bottom: 115, right: 20, gap: 15 },
+    saveFab: { 
+    backgroundColor: '#2e7d32' // Verdele tău principal pentru butonul de salvare
+  },
+fab: { 
+  width: 60, height: 60, borderRadius: 30, backgroundColor: '#fff', 
+  justifyContent: 'center', alignItems: 'center', elevation: 8,
+  shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 5
+},
   container: { flex: 1, backgroundColor: '#fff' },
+  
   filterArea: {
     position: 'absolute',
     top: 70,
@@ -185,19 +200,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     padding: 12,
     paddingHorizontal: 15,
-    borderRadius: 12,
+    borderRadius: 20,
     elevation: 5,
-    borderWidth: 1,
-    borderColor: '#2e7d32',
+      borderWidth: 1,
+      borderColor: 'rgba(46, 125, 50, 0.2)',
+      shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
     maxWidth: 150,
     marginRight: 10,
-  },
-  scanButton: {
-    backgroundColor: '#007bff', // Albastru pentru Scanare
-    padding: 12,
-    borderRadius: 12,
-    elevation: 5,
-    minWidth: 100,
   },
   scanButtonText: { color: '#fff', fontWeight: 'bold', textAlign: 'center' },
   mainFilterText: { color: '#2e7d32', fontWeight: 'bold', fontSize: 14, textAlign: 'center' },
@@ -223,5 +234,33 @@ const styles = StyleSheet.create({
   },
   gpsButton: { backgroundColor: '#fff', padding: 15, borderRadius: 25, elevation: 5 },
   setPointButton: { backgroundColor: '#2e7d32', padding: 15, borderRadius: 25, elevation: 5 },
-  buttonText: { fontWeight: 'bold', color: '#333' }
+    buttonText: { fontWeight: 'bold', color: '#333' },
+  scanPill: {
+    position: 'absolute',
+    top: 50, // Sub status bar
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(46, 125, 50, 0.2)',
+  },
+  scanIcon: {
+    fontSize: 18,
+    marginRight: 8,
+  },
+  scanText: {
+    color: '#2e7d32',
+    fontWeight: '800',
+    fontSize: 14,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  }
 });

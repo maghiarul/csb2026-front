@@ -10,6 +10,7 @@ import MapComponent from './src/components/MapComponent';
 import CameraScreen from './src/screens/CameraScreen';
 import PlantListScreen from './src/screens/PlantListScreen';
 import AdminScreen from './src/screens/AdminPanel'; // Verifică dacă fișierul se numește AdminScreen sau AdminPanel
+import SplashScreen from './src/screens/SplashScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -17,6 +18,8 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+if (showSplash) return <SplashScreen onFinish={() => setShowSplash(false)} />;
 
   if (!isLoggedIn) {
     if (authMode === 'login') {
@@ -39,7 +42,38 @@ export default function App() {
   return (
     <LocationProvider>
       <NavigationContainer>
-        <Tab.Navigator screenOptions={{ tabBarActiveTintColor: '#2e7d32', headerShown: false }}>
+        <Tab.Navigator 
+  screenOptions={{ 
+    tabBarActiveTintColor: '#2e7d32',
+    tabBarInactiveTintColor: '#999',
+    headerShown: false,
+    tabBarStyle: {
+      backgroundColor: '#fff',
+      marginRight: 10,
+      marginLeft: 10,
+      position: 'absolute', // Esențial pentru efectul de plutire
+      bottom: 25,           // Distanța de marginea de jos
+      left: 20,             // Distanța de marginea stângă
+      right: 20,            // Distanța de marginea dreaptă
+      height: 70,           // Înălțime modernă
+      borderRadius: 35,     // Capsulă perfectă
+      borderTopWidth: 0,    // Scoatem linia standard
+      // Umbră premium
+      elevation: 15,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.12,
+      shadowRadius: 20,
+      paddingBottom: 12,
+      paddingTop: 10,
+    },
+    tabBarLabelStyle: {
+      fontSize: 11,
+      fontWeight: '700',
+      marginTop: -5,
+    }
+  }}
+>
           <Tab.Screen name="Hartă" component={MapComponent} options={{ tabBarIcon: () => <Text>🗺️</Text> }} />
           <Tab.Screen name="Scanează" component={CameraScreen} options={{ tabBarIcon: () => <Text>📸</Text> }} />
           <Tab.Screen name="Enciclopedie" component={PlantListScreen} options={{ tabBarIcon: () => <Text>🌿</Text> }} />

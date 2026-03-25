@@ -55,45 +55,164 @@ export default function PlantListScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f0f4f0' },
-  headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#2e7d32', textAlign: 'center', marginVertical: 20 },
-  listContainer: { paddingHorizontal: 15, paddingBottom: 20 },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#F1F8E9' // Rămânem pe verdele tău soft
+  }, 
+  
+  header: { 
+    paddingTop: 60, // Spațiu pentru notch
+    paddingBottom: 25, 
+    paddingHorizontal: 20,
+    backgroundColor: '#fff', 
+    borderBottomLeftRadius: 35, 
+    borderBottomRightRadius: 35, 
+    // Umbră mai fină și mai lungă pentru profunzime
+    shadowColor: '#2e7d32',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.05,
+    shadowRadius: 20,
+    elevation: 8,
+      zIndex: 10
+  },
+
+  headerTitle: { 
+    fontSize: 28, 
+    fontWeight: '900', // Extra bold pentru impact
+    color: '#1b5e20', 
+    textAlign: 'left', // Alinierea la stânga e mai modernă
+    letterSpacing: -0.5
+  },
+
+  listContainer: { 
+    paddingHorizontal: 20, 
+    paddingTop: 20,
+    paddingBottom: 100 // Spațiu pentru Tab Bar-ul plutitor
+  },
+
   card: {
     backgroundColor: '#fff',
-    borderRadius: 15,
-    marginBottom: 15,
+    borderRadius: 24, // Mai rotunjit = mai "friendly"
+    marginBottom: 20,
     overflow: 'hidden',
-    elevation: 3, // Umbră pe Android
-    shadowColor: '#000', // Umbră pe iOS
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
     flexDirection: 'row',
+    // Umbră stil "Floating"
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(46, 125, 50, 0.05)', // Bordură verde aproape invizibilă
   },
-  cardImage: { width: 100, height: 100 },
-  cardContent: { flex: 1, padding: 15, justifyContent: 'center' },
-  plantName: { fontSize: 16, fontWeight: 'bold', color: '#333', marginBottom: 5 },
-  tapToRead: { fontSize: 12, color: '#2e7d32', fontStyle: 'italic' },
+
+  cardImage: { 
+    width: 110, 
+    height: 110,
+    borderRadius: 20,
+    margin: 10 // Imaginea "plutește" în interiorul cardului
+  },
+
+  cardContent: { 
+    flex: 1, 
+    padding: 15, 
+    paddingLeft: 5,
+    justifyContent: 'center' 
+  },
+
+  plantName: { 
+    fontSize: 20, 
+    fontWeight: '800', 
+    color: '#2e7d32',
+    marginBottom: 4
+  },
+
+  scientificName: { // Adăugat pentru rutele din Postman
+    fontSize: 13,
+    fontStyle: 'italic',
+    color: '#888',
+    marginBottom: 8
+  },
+
+  tapToRead: { 
+    fontSize: 12, 
+    color: '#A1887F', // Accent maro-pământiu
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1
+  },
   
-  // Stiluri Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  // Stiluri Modal (Bottom Sheet Style)
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(27, 94, 32, 0.4)', // Overlay cu tentă verde
+    justifyContent: 'flex-end' 
+  },
+
   modalContent: { 
     backgroundColor: '#fff', 
-    borderTopLeftRadius: 25, 
-    borderTopRightRadius: 25, 
-    padding: 25,
-    maxHeight: '85%' 
+    borderTopLeftRadius: 40, 
+    borderTopRightRadius: 40, 
+    padding: 30,
+    maxHeight: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 20
   },
-  modalImage: { width: '100%', height: 200, borderRadius: 15, marginBottom: 15 },
-  modalTitle: { fontSize: 22, fontWeight: 'bold', color: '#2e7d32', marginBottom: 15 },
-  sectionSubtitle: { fontSize: 16, fontWeight: 'bold', color: '#555', marginTop: 10, marginBottom: 5 },
-  sectionText: { fontSize: 15, color: '#333', lineHeight: 22, marginBottom: 10 },
+
+  modalImage: { 
+    width: '100%', 
+    height: 250, 
+    borderRadius: 30, 
+    marginBottom: 20 
+  },
+
+  modalTitle: { 
+    fontSize: 26, 
+    fontWeight: '900', 
+    color: '#1b5e20', 
+    marginBottom: 5 
+  },
+
+  sectionSubtitle: { 
+    fontSize: 14, 
+    fontWeight: '800', 
+    color: '#2e7d32', 
+    marginTop: 20, 
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5
+  },
+
+  sectionText: { 
+    fontSize: 16, 
+    color: '#444', 
+    lineHeight: 24, // Mai mult spațiu între rânduri pentru citire ușoară
+    backgroundColor: '#F9FBE7', // Fundal discret pentru text
+    padding: 15,
+    borderRadius: 15
+  },
+
   closeButton: { 
     backgroundColor: '#2e7d32', 
-    padding: 15, 
-    borderRadius: 10, 
+    padding: 20, 
+    borderRadius: 20, 
     alignItems: 'center', 
-    marginTop: 20,
-    marginBottom: 10
+    marginTop: 30,
+    marginBottom: 20,
+    // Efect de "Glow" pe buton
+    shadowColor: '#2e7d32',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8
   },
-  closeButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
+
+  closeButtonText: { 
+    color: '#fff', 
+    fontSize: 18, 
+    fontWeight: 'bold' 
+  }
 });
