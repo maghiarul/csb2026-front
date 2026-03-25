@@ -57,6 +57,7 @@ export default function Home() {
             rel="noopener noreferrer"
           >
             Documentation
+            Test commit
           </a>
         </div>
       </main>
