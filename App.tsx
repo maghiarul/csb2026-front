@@ -2,6 +2,8 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Text } from 'react-native';
+import { LocationProvider } from './src/services/LocationContext';
+
 
 // Importăm ecranele noastre
 import MapComponent from './src/components/MapComponent';
@@ -12,6 +14,7 @@ const Tab = createBottomTabNavigator();
 
 export default function App() {
   return (
+    <LocationProvider>
     <NavigationContainer>
       <Tab.Navigator 
         screenOptions={{ 
@@ -46,6 +49,7 @@ export default function App() {
           }} 
         />
       </Tab.Navigator>
-    </NavigationContainer>
+      </NavigationContainer>
+      </LocationProvider>
   );
 }

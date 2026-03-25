@@ -1,13 +1,17 @@
 import React, { useState, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Alert, SafeAreaView } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Alert, SafeAreaView, Modal, FlatList } from 'react-native';
 import { WebView } from 'react-native-webview';
-import * as Location from 'expo-location'; // Pachetul pentru senzorul GPS
+import * as Location from 'expo-location'; 
+import { useLocation } from '../services/LocationContext';
+import { MOCK_LOCATIONS, MOCK_PLANTS } from '../services/plantData';
 
 export default function MapComponent() {
   const webViewRef = useRef<WebView>(null);
   const [selectedLocation, setSelectedLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [activeFilter, setActiveFilter] = useState('Toate');
+  const [isMenuVisible, setIsMenuVisible] = useState(false);
+  const { setCoords } = useLocation();
 
-  // Codul HTML/JS pentru hartă
   const mapHTML = `
     <!DOCTYPE html>
     <html>
@@ -23,103 +27,105 @@ export default function MapComponent() {
     <body>
       <div id="map"></div>
       <script>
-        var map = L.map('map').setView([45.4353, 28.0080], 13); // Galați default
-        
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '© OpenStreetMap'
-        }).addTo(map);
-
+        var map = L.map('map').setView([45.4353, 28.0080], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         var currentMarker = null;
+        var markersLayer = L.layerGroup().addTo(map);
 
-        // 1. Când utilizatorul apasă pe hartă
+        function updateMarkers(locationsJson) {
+          markersLayer.clearLayers();
+          const locations = JSON.parse(locationsJson);
+          locations.forEach(loc => {
+            L.marker([loc.lat, loc.lng]).addTo(markersLayer).bindPopup("<b>" + loc.name + "</b>");
+          });
+        }
+
         map.on('click', function(e) {
-          var lat = e.latlng.lat;
-          var lng = e.latlng.lng;
-
-          // Mutăm sau creăm pin-ul
-          if (currentMarker) {
-            currentMarker.setLatLng(e.latlng);
-          } else {
-            currentMarker = L.marker(e.latlng).addTo(map);
-          }
-
-          // Trimitem coordonatele către React Native
-          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'map_click', lat: lat, lng: lng }));
+          if (currentMarker) { currentMarker.setLatLng(e.latlng); } 
+          else { currentMarker = L.marker(e.latlng).addTo(map); }
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'map_click', lat: e.latlng.lat, lng: e.latlng.lng }));
         });
 
-        // 2. Funcție apelată de React Native când folosim GPS-ul
         function setViewAndMarker(lat, lng) {
           map.setView([lat, lng], 16);
-          if (currentMarker) {
-            currentMarker.setLatLng([lat, lng]);
-          } else {
-            currentMarker = L.marker([lat, lng]).addTo(map);
-          }
+          if (currentMarker) { currentMarker.setLatLng([lat, lng]); } 
+          else { currentMarker = L.marker([lat, lng]).addTo(map); }
         }
       </script>
     </body>
     </html>
   `;
 
-  // Ascultăm mesajele care vin de la hartă (când dai click)
+  const handleFilterSelect = (filterName: string) => {
+    setActiveFilter(filterName);
+    setIsMenuVisible(false);
+    const filtered = filterName === 'Toate' 
+      ? MOCK_LOCATIONS 
+      : MOCK_LOCATIONS.filter(l => l.name === filterName);
+    webViewRef.current?.injectJavaScript(`updateMarkers('${JSON.stringify(filtered)}'); true;`);
+  };
+
   const handleMessage = (event: any) => {
     const data = JSON.parse(event.nativeEvent.data);
-    if (data.type === 'map_click') {
-      setSelectedLocation({ lat: data.lat, lng: data.lng });
-    }
+    if (data.type === 'map_click') { setSelectedLocation({ lat: data.lat, lng: data.lng }); }
   };
 
-  // Funcția pentru butonul de GPS
   const getCurrentLocation = async () => {
-    // Cerem permisiunea de locație de la telefon
     let { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Eroare', 'Aplicația are nevoie de permisiunea de locație pentru GPS.');
-      return;
-    }
-
-    // Citim senzorul
+    if (status !== 'granted') return;
     let location = await Location.getCurrentPositionAsync({});
-    const lat = location.coords.latitude;
-    const lng = location.coords.longitude;
-
-    setSelectedLocation({ lat, lng });
-
-    // Injectăm cod în WebView ca să mute harta pe GPS
-    webViewRef.current?.injectJavaScript(`setViewAndMarker(${lat}, ${lng}); true;`);
+    const { latitude, longitude } = location.coords;
+    setSelectedLocation({ lat: latitude, lng: longitude });
+    webViewRef.current?.injectJavaScript(`setViewAndMarker(${latitude}, ${longitude}); true;`);
   };
 
-// Funcția pentru salvarea punctului
   const handleSetPoint = () => {
     if (selectedLocation) {
-      Alert.alert(
-        "Punct Salvat!", 
-        `Coordonate: ${selectedLocation.lat.toFixed(4)}, ${selectedLocation.lng.toFixed(4)}\n\nUrmătorul pas: Deschidem Camera!`
-      );
+      setCoords(selectedLocation);
+      Alert.alert("Locație Salvată!", "Mergi la tab-ul 'Scanează'.");
     }
   };
 
   return (
     <SafeAreaView style={styles.container}>
+      <View style={styles.filterContainer}>
+        <TouchableOpacity style={styles.mainFilterButton} onPress={() => setIsMenuVisible(true)}>
+          <Text style={styles.mainFilterText} numberOfLines={1} ellipsizeMode='tail'>🔍 Filtrează: {activeFilter}</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Modal visible={isMenuVisible} animationType="fade" transparent={true}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setIsMenuVisible(false)}>
+          <View style={styles.menuContent}>
+            <Text style={styles.menuTitle}>Alege planta:</Text>
+            <FlatList
+              data={['Toate', ...MOCK_PLANTS.map(p => p.name)]}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.menuItem} onPress={() => handleFilterSelect(item)}>
+                  <Text style={[styles.menuItemText, activeFilter === item && styles.activeMenuText]}>
+                    {item}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <WebView
         ref={webViewRef}
         source={{ html: mapHTML }}
-        style={styles.map}
         onMessage={handleMessage}
-        scrollEnabled={false}
-        originWhitelist={['*']}
+        onLoad={() => webViewRef.current?.injectJavaScript(`updateMarkers('${JSON.stringify(MOCK_LOCATIONS)}'); true;`)}
         javaScriptEnabled={true}
         domStorageEnabled={true}
       />
       
-      {/* Container pentru butoanele care stau peste hartă */}
       <View style={styles.buttonContainer}>
         <TouchableOpacity style={styles.gpsButton} onPress={getCurrentLocation}>
           <Text style={styles.buttonText}>📍 Locația Mea</Text>
         </TouchableOpacity>
-
-        {/* Butonul Set Point apare doar dacă ai pus un pin pe hartă */}
         {selectedLocation && (
           <TouchableOpacity style={styles.setPointButton} onPress={handleSetPoint}>
             <Text style={styles.buttonText}>✅ Set Point</Text>
@@ -131,41 +137,50 @@ export default function MapComponent() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, width: '100%' },
-  map: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#fff' },
+  filterContainer: {
+    position: 'absolute',
+    top: 70, // Coborât destul sub notch
+    left: 20,
+      right: 20,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  mainFilterButton: {
+    backgroundColor: '#fff',
+      padding: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 2 },
+    borderWidth: 1,
+      borderColor: '#2e7d32',
+    maxWidth: 250
+  },
+  mainFilterText: { color: '#2e7d32', fontWeight: 'bold', fontSize: 16, textAlign: 'center' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
+  menuContent: {
+    width: '80%',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    maxHeight: '60%',
+    elevation: 10,
+  },
+  menuTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, color: '#333', textAlign: 'center' },
+  menuItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  menuItemText: { fontSize: 16, color: '#444' },
+  activeMenuText: { color: '#2e7d32', fontWeight: 'bold' },
   buttonContainer: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 40,
     width: '100%',
     flexDirection: 'row',
     justifyContent: 'space-evenly',
-    paddingHorizontal: 20,
   },
-  gpsButton: {
-    backgroundColor: '#ffffff',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 25,
-    elevation: 5, // umbră pentru Android
-    shadowColor: '#000', // umbră pentru iOS
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  setPointButton: {
-    backgroundColor: '#2e7d32', // verde
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 25,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  buttonText: {
-    fontWeight: 'bold',
-    fontSize: 16,
-    color: '#333',
-  }
+  gpsButton: { backgroundColor: '#fff', padding: 15, borderRadius: 25, elevation: 5 },
+  setPointButton: { backgroundColor: '#2e7d32', padding: 15, borderRadius: 25, elevation: 5 },
+  buttonText: { fontWeight: 'bold', color: '#333' }
 });

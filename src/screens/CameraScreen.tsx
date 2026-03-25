@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Image, Button, TextInput, ActivityIndicator, Alert, ScrollView, SafeAreaView, Modal, FlatList } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { MOCK_PLANTS } from '../services/plantData'; // Importă datele despre plante (pentru Enciclopedie)
+import { useLocation } from '../services/LocationContext';
 
 export default function CameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -11,7 +12,7 @@ export default function CameraScreen() {
   const cameraRef = useRef<any>(null);
   const [showManualList, setShowManualList] = useState(false);
   const [identifiedPlant, setIdentifiedPlant] = useState<string | null>(null);
-
+const { coords } = useLocation();
   if (!permission) return <View />;
 
   if (!permission.granted) {
@@ -44,8 +45,10 @@ const handleIdentify = () => {
       Alert.alert(
         "🌿 Rezultat AI", 
         `Am identificat: ${aiResult}. Dacă nu este corect, poți schimba planta manual folosind selectorul.`
-      );
+        );
+        
     }, 2000);
+    
   };
   // Ecranul 2: După ce am făcut poza (Formularul)
 if (photo) {
@@ -81,10 +84,27 @@ if (photo) {
             <Button title="✨ Identifică AI" onPress={handleIdentify} color="#2e7d32" />
           ) : (
             <Button 
-              title="🚀 Salvează Punct" 
-              onPress={() => Alert.alert("Succes", "Datele au fost trimise către baza de date PostGIS!")} 
-              color="#007bff" 
-            />
+  title="🚀 Salvează Punct" 
+  onPress={() => {
+    // Verificăm dacă avem coordonate înainte de a salva
+    if (!coords) {
+      Alert.alert("Eroare", "Te rugăm să alegi mai întâi locația pe hartă!");
+      return;
+    }
+
+    Alert.alert(
+      "🌿 Punct de Interes Creat!", 
+      `Plantă: ${identifiedPlant}\n` +
+      `Locație: ${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}\n` +
+      `Comentariu: ${comment}\n\n` +
+      `Gata de trimis la FastAPI!`
+    );
+    
+    // Aici, mai târziu, vei adăuga codul de trimitere reală către colegul tău:
+    // sendToBackend({ photo, identifiedPlant, comment, coords });
+  }} 
+  color="#007bff" 
+/>
           )}
         </View>
           {/* MODALUL PENTRU LISTĂ */}
