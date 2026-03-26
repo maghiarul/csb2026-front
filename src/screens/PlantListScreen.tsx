@@ -1,16 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, FlatList, TouchableOpacity, Image, Modal, ScrollView, SafeAreaView, ActivityIndicator, Alert } from 'react-native';
-// IMPORTĂM ICONIȚELE LUCIDE
-import { 
-  Leaf, 
-  BookOpen, 
-  CheckCircle2, 
-  AlertTriangle, 
-  Trash2, 
-  Info, 
-  ChevronRight,
-  XCircle
-} from 'lucide-react-native';
+import { Leaf, BookOpen, CheckCircle2, AlertTriangle, Trash2, Info, ChevronRight, XCircle } from 'lucide-react-native';
 import api from '../services/api';
 
 interface PlantListProps {
@@ -24,6 +14,46 @@ interface Plant {
   name_latin: string;
   image_url: string | null;
 }
+
+// NORMALIZATOR STRICT: "Buruiana Cârtiței" devine "buruianacartite"
+const normalizePlantName = (name: string) => {
+  if (!name) return "";
+  let cleaned = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Elimină diacriticele
+    .replace(/[^a-zA-Z0-9]/g, "")    // Elimină absolut toate spațiile
+    .toLowerCase();
+    
+  // Asigurăm potrivirea exactă pentru poza ta care se termină în "e"
+  if (cleaned === "buruianacartitei") return "buruianacartite";
+  
+  return cleaned;
+};
+
+// Dicționarul REPARAT: FĂRĂ SPAȚII ȘI CU NUMELE EXACTE
+const localPlantImages: { [key: string]: any } = {
+  "buruianadecartite": require('../../assets/imagini/buruianadecartite.jpg'),
+  "ferigadepadure": require('../../assets/imagini/ferigadepadure.jpg'),
+  "ferigaregala": require('../../assets/imagini/ferigaregala.jpg'),
+  "galbenele": require('../../assets/imagini/galbenele.jpg'),
+  "laptucasalbatica": require('../../assets/imagini/laptucasalbatica.jpg'),
+  "macaspru": require('../../assets/imagini/macaspru.jpg'),
+  "macdecamp": require('../../assets/imagini/macdecamp.jpg'),
+  "macdubios": require('../../assets/imagini/macdubios.jpg'),
+  "morcovsalbatic": require('../../assets/imagini/morcovsalbatic.jpg'),
+  "palamida": require('../../assets/imagini/palamida.jpg'),
+  "piciorulcaprei": require('../../assets/imagini/piciorulcaprei.jpg'),
+  "scaiete": require('../../assets/imagini/scaiete.jpg'),
+  "sugel": require('../../assets/imagini/sugel.jpg'),
+  "sunatoare": require('../../assets/imagini/sunatoare.jpg'),
+  "susaipaduret": require('../../assets/imagini/susaipaduret.jpg'),
+  "trepadatoareanuala": require('../../assets/imagini/trepadatoareanuala.jpg'),
+  "trifoialb": require('../../assets/imagini/trifoialb.jpg'),
+  "trifoifrag": require('../../assets/imagini/trifoifrag.jpg'),
+  "trifoirosu": require('../../assets/imagini/trifoirosu.jpg'),
+  "urzicamoartaalba": require('../../assets/imagini/urzicamoartaalba.jpg'),
+  "usturoita": require('../../assets/imagini/usturoita.jpg'),
+};
 
 export default function PlantListScreen({ isAdmin = false, route }: PlantListProps) {
   const isUserAdmin = isAdmin || route?.params?.isAdmin || false;
@@ -41,8 +71,7 @@ export default function PlantListScreen({ isAdmin = false, route }: PlantListPro
       const response = await api.get('/plants');
       setPlants(response.data);
     } catch (error) {
-      console.error("Eroare Enciclopedie:", error);
-      Alert.alert("Eroare", "Nu am putut descărca plantele.");
+      Alert.alert('Eroare', 'Nu am putut încărca plantele.');
     } finally {
       setLoading(false);
     }
@@ -56,131 +85,105 @@ export default function PlantListScreen({ isAdmin = false, route }: PlantListPro
     setSelectedPlant(plant);
     setFullPlantInfo(null);
     setIsLoadingInfo(true);
+    
     try {
       const res = await api.get(`/plants/${plant.id}`);
       setFullPlantInfo(res.data);
     } catch (error) {
-      console.log("Eroare detalii:", error);
+      console.log("Nu am putut aduce detaliile plantei");
     } finally {
       setIsLoadingInfo(false);
     }
   };
 
-  const handleDeletePlant = (plantId: number) => {
-    if (!isUserAdmin) return; 
-    Alert.alert("Ștergere", "Ești sigur că vrei să elimini planta?", [
-      { text: "Anulează", style: "cancel" },
-      { text: "Șterge", style: "destructive", onPress: async () => {
-          try {
-            await api.delete(`/admin/plants/${plantId}`);
-            Alert.alert("Succes", "Planta a fost ștearsă!");
-            setSelectedPlant(null);
-            fetchPlants();
-          } catch (error) { Alert.alert("Eroare", "Eroare la ștergere."); }
-      }}
-    ]);
+  const getPlantImage = (plantName: string) => {
+    const normalized = normalizePlantName(plantName);
+    if (localPlantImages[normalized]) {
+      return localPlantImages[normalized];
+    }
+    return { uri: `https://via.placeholder.com/400x300/e0f2f1/2e7d32?text=${encodeURIComponent(plantName)}` }; 
   };
 
-  const renderPlantCard = ({ item }: { item: Plant }) => {
-    const imageUrl = item.image_url ? { uri: item.image_url } : { uri: 'https://via.placeholder.com/150/2e7d32/FFFFFF?text=EcoScan' };
-
-    return (
-      <TouchableOpacity style={styles.card} onPress={() => handleSelectPlant(item)}>
-        <Image source={imageUrl} style={styles.cardImage} resizeMode="cover" />
-        <View style={styles.cardContent}>
-          <Text style={styles.plantName}>{item.name_ro || "Nume Necunoscut"}</Text>
-          <Text style={styles.scientificName}>{item.name_latin || "Specie Necunoscută"}</Text>
-          <View style={styles.tapToReadContainer}>
-            <Text style={styles.tapToRead}>DETALII</Text>
-            <ChevronRight color="#A1887F" size={14} style={{marginLeft: 4}} />
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
+  const getSafeText = (text: string | null | undefined, fallback: string) => {
+    if (!text || text.trim() === '') return fallback;
+    return text;
   };
-
-  const getSafeText = (text: string | null | undefined, fallback: string) => (!text || text.trim() === '') ? fallback : text;
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Leaf color="#1b5e20" size={28} style={{marginBottom: 5}} />
-        <Text style={styles.headerTitle}>Enciclopedia Plantelor</Text>
-      </View>
-
+      <Text style={styles.headerTitle}>Enciclopedie Botanică</Text>
+      
       {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2e7d32" />
-          <Text style={{ marginTop: 15, color: '#666' }}>Se descarcă datele...</Text>
-        </View>
+        <ActivityIndicator size="large" color="#2e7d32" style={{ marginTop: 50 }} />
       ) : (
         <FlatList
           data={plants}
           keyExtractor={(item) => item.id.toString()}
-          contentContainerStyle={styles.listContainer}
-          renderItem={renderPlantCard}
-          onRefresh={fetchPlants}
-          refreshing={loading}
-          ListEmptyComponent={<Text style={styles.emptyText}>Nu există plante în baza de date.</Text>}
+          contentContainerStyle={{ padding: 15, paddingBottom: 100 }}
+          renderItem={({ item }) => (
+            <TouchableOpacity style={styles.plantCard} onPress={() => handleSelectPlant(item)}>
+              <Image source={getPlantImage(item.name_ro)} style={styles.thumbnail} resizeMode="cover" />
+              
+              <View style={styles.cardInfo}>
+                <Text style={styles.plantName}>{item.name_ro}</Text>
+                <Text style={styles.plantLatin}>{item.name_latin}</Text>
+              </View>
+              <ChevronRight color="#2e7d32" size={24} />
+            </TouchableOpacity>
+          )}
         />
       )}
 
-      <Modal visible={!!selectedPlant} animationType="slide" transparent={true} onRequestClose={() => setSelectedPlant(null)}>
+      {/* Modal Detalii Plantă */}
+      <Modal visible={!!selectedPlant} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
-          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setSelectedPlant(null)} />
           <View style={styles.modalContent}>
             {selectedPlant && (
               <>
-                <Text style={styles.modalTitle}>{selectedPlant.name_ro}</Text>
-                <Text style={styles.modalScientificName}>{selectedPlant.name_latin}</Text>
-                
-                <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={true} contentContainerStyle={{ paddingBottom: 20 }}>
-                  <Image source={selectedPlant.image_url ? { uri: selectedPlant.image_url } : { uri: 'https://via.placeholder.com/400x300/e0e0e0/888888?text=Fara+Poza' }} style={styles.modalImage} resizeMode="cover" />
+                <TouchableOpacity style={styles.closeIcon} onPress={() => setSelectedPlant(null)}>
+                  <XCircle color="#d32f2f" size={32} />
+                </TouchableOpacity>
+
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                  <Text style={styles.modalTitle}>{selectedPlant.name_ro}</Text>
+                  <Text style={styles.modalScientificName}>{selectedPlant.name_latin}</Text>
                   
+                  <Image source={getPlantImage(selectedPlant.name_ro)} style={styles.modalImage} resizeMode="cover" />
+
                   {isLoadingInfo ? (
-                     <View style={{padding: 20, alignItems: 'center'}}>
-                       <ActivityIndicator size="small" color="#2e7d32" />
-                       <Text style={{color: '#666', marginTop: 10}}>Se încarcă...</Text>
-                     </View>
+                    <ActivityIndicator size="large" color="#2e7d32" style={{ marginVertical: 30 }} />
                   ) : fullPlantInfo ? (
                     <View style={styles.encyclopediaSection}>
                       <View style={styles.sectionHeaderRow}>
-                        <Info color="#2e7d32" size={18} />
+                        <Info color="#2e7d32" size={20} />
                         <Text style={styles.sectionSubtitle}>DESCRIERE</Text>
                       </View>
-                      <Text style={styles.sectionText}>{getSafeText(fullPlantInfo.description, "Fără descriere.")}</Text>
+                      <Text style={styles.sectionText}>{getSafeText(fullPlantInfo.description, "Informație indisponibilă.")}</Text>
 
                       <View style={styles.sectionHeaderRow}>
-                        <Leaf color="#2e7d32" size={18} />
+                        <Leaf color="#2e7d32" size={20} />
                         <Text style={styles.sectionSubtitle}>PĂRȚI UTILIZABILE</Text>
                       </View>
-                      <Text style={styles.sectionText}>{getSafeText(fullPlantInfo.usable_parts, "Nu sunt specificate.")}</Text>
+                      <Text style={styles.sectionText}>{getSafeText(fullPlantInfo.usable_parts, "Nespecificat.")}</Text>
 
                       <View style={styles.sectionHeaderRow}>
-                        <CheckCircle2 color="#2e7d32" size={18} />
+                        <CheckCircle2 color="#2e7d32" size={20} />
                         <Text style={styles.sectionSubtitle}>BENEFICII</Text>
                       </View>
                       <Text style={styles.sectionText}>{getSafeText(fullPlantInfo.health_benefits, "Nu sunt documentate.")}</Text>
 
                       <View style={styles.sectionHeaderRow}>
-                        <AlertTriangle color="#c62828" size={18} />
-                        <Text style={[styles.sectionSubtitle, {color: '#c62828'}]}>CONTRAINDICAȚII</Text>
+                        <AlertTriangle color="#c62828" size={20} />
+                        <Text style={[styles.sectionSubtitle, { color: '#c62828' }]}>CONTRAINDICAȚII</Text>
                       </View>
-                      <Text style={[styles.sectionText, {backgroundColor: '#ffebee', color: '#c62828'}]}>{getSafeText(fullPlantInfo.contraindications, "Consultați un medic.")}</Text>
+                      <Text style={[styles.sectionText, { backgroundColor: '#ffebee', color: '#c62828' }]}>
+                        {getSafeText(fullPlantInfo.contraindications, "Consultă un medic.")}
+                      </Text>
                     </View>
-                  ) : null}
-                </ScrollView>
-
-                <View style={styles.modalButtonsRow}>
-                  <TouchableOpacity style={[styles.actionButton, {backgroundColor: '#2e7d32'}]} onPress={() => setSelectedPlant(null)}>
-                    <Text style={styles.actionButtonText}>Închide</Text>
-                  </TouchableOpacity>
-                  {isUserAdmin && (
-                    <TouchableOpacity style={[styles.actionButton, {backgroundColor: '#d32f2f'}]} onPress={() => handleDeletePlant(selectedPlant.id)}>
-                      <Trash2 color="#fff" size={20} />
-                    </TouchableOpacity>
+                  ) : (
+                    <Text style={{textAlign: 'center', color: '#666', marginTop: 20}}>Eroare la încărcarea datelor.</Text>
                   )}
-                </View>
+                </ScrollView>
               </>
             )}
           </View>
@@ -191,39 +194,21 @@ export default function PlantListScreen({ isAdmin = false, route }: PlantListPro
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F1F8E9' }, 
-  header: { paddingTop: 60, paddingBottom: 10, paddingHorizontal: 20, alignItems: 'center' },
-  headerTitle: { fontSize: 26, fontWeight: '900', color: '#1b5e20', textAlign: 'center', letterSpacing: -0.5 },
-  listContainer: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 100 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyText: { textAlign: 'center', marginTop: 50, color: '#666' },
-  card: { 
-    backgroundColor: '#fff', borderRadius: 25, marginBottom: 20, overflow: 'hidden', 
-    flexDirection: 'column', alignItems: 'center', elevation: 4
-  },
-  cardImage: { width: '100%', height: 160, backgroundColor: '#f5f5f5' },
-  cardContent: { padding: 20, alignItems: 'center', width: '100%' },
-  plantName: { fontSize: 20, fontWeight: '800', color: '#2e7d32', marginBottom: 4, textAlign: 'center' },
-  scientificName: { fontSize: 14, fontStyle: 'italic', color: '#888', marginBottom: 12, textAlign: 'center' },
-  tapToReadContainer: { flexDirection: 'row', alignItems: 'center' },
-  tapToRead: { fontSize: 11, color: '#A1887F', fontWeight: '800', letterSpacing: 1 },
+  container: { flex: 1, backgroundColor: '#f9fbe7' },
+  headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#2e7d32', textAlign: 'center', marginVertical: 15 },
+  plantCard: { backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 20, marginBottom: 15, elevation: 3 },
+  thumbnail: { width: 70, height: 70, borderRadius: 35, marginRight: 15, backgroundColor: '#eee' },
+  cardInfo: { flex: 1 },
+  plantName: { fontSize: 18, fontWeight: 'bold', color: '#333' },
+  plantLatin: { fontSize: 14, color: '#888', fontStyle: 'italic' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
-  modalContent: { 
-    backgroundColor: '#fff', borderTopLeftRadius: 35, borderTopRightRadius: 35, 
-    paddingHorizontal: 25, paddingTop: 25, paddingBottom: 40, maxHeight: '90%'
-  },
-  modalTitle: { fontSize: 28, fontWeight: '900', color: '#1b5e20', textAlign: 'center' },
+  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 35, borderTopRightRadius: 35, padding: 25, maxHeight: '90%' },
+  closeIcon: { position: 'absolute', top: 15, right: 15, zIndex: 10 },
+  modalTitle: { fontSize: 28, fontWeight: '900', color: '#1b5e20', textAlign: 'center', marginTop: 10 },
   modalScientificName: { fontSize: 18, fontStyle: 'italic', color: '#888', textAlign: 'center', marginBottom: 20 },
-  scrollArea: { flexShrink: 1, marginBottom: 15 },
-  modalImage: { width: '100%', height: 240, borderRadius: 25, marginBottom: 20 },
-  encyclopediaSection: { width: '100%', alignItems: 'center' },
+  modalImage: { width: '100%', height: 250, borderRadius: 25, marginBottom: 20, backgroundColor: '#eee' },
+  encyclopediaSection: { width: '100%' },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', marginTop: 20, marginBottom: 8 },
   sectionSubtitle: { fontSize: 13, fontWeight: '900', color: '#2e7d32', marginLeft: 8, letterSpacing: 1 },
-  sectionText: { 
-    fontSize: 15, color: '#444', lineHeight: 22, backgroundColor: '#F9FBE7', 
-    padding: 15, borderRadius: 15, width: '100%', textAlign: 'center'
-  },
-  modalButtonsRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#eee' },
-  actionButton: { flex: 1, padding: 18, borderRadius: 18, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
-  actionButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
+  sectionText: { fontSize: 15, color: '#444', lineHeight: 22, backgroundColor: '#f1f8e9', padding: 15, borderRadius: 15 },
 });

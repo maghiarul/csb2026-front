@@ -4,6 +4,7 @@ import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location'; 
 import { Search, Radio, Target, MapPin, Trash2, Info, Leaf, CheckCircle2, AlertTriangle, BookOpen } from 'lucide-react-native';
 import { useLocation } from '../services/LocationContext';
+import { useIsFocused } from '@react-navigation/native';
 import api from '../services/api'; 
 
 interface MapProps {
@@ -13,6 +14,7 @@ interface MapProps {
 
 export default function MapComponent({ isAdmin = false, currentUserName = 'Utilizator' }: MapProps) {
   const webViewRef = useRef<WebView>(null);
+  const isFocused = useIsFocused();
   const [selectedLocation, setSelectedLocation] = useState<{lat: number, lng: number} | null>(null);
   const [markers, setMarkers] = useState<any[]>([]);
   const [activeFilterName, setActiveFilterName] = useState('Toate');
@@ -23,6 +25,7 @@ export default function MapComponent({ isAdmin = false, currentUserName = 'Utili
   const [fullPlantInfo, setFullPlantInfo] = useState<any | null>(null);
   const [isLoadingInfo, setIsLoadingInfo] = useState(false);
   const [allUsers, setAllUsers] = useState<any[]>([]); 
+  const [scanMessage, setScanMessage] = useState<string | null>(null);
   const { setCoords } = useLocation();
 
   useEffect(() => {
@@ -41,20 +44,7 @@ export default function MapComponent({ isAdmin = false, currentUserName = 'Utili
     loadLookupData();
   }, [currentUserName]); 
 
-  useEffect(() => {
-    if (markers.length >= 0) {
-      const dataForWebview = {
-        points: markers,
-        isAdmin: isAdmin,
-        allPlants: allPlants, 
-        allUsers: allUsers,
-        currentUserName: currentUserName
-      };
-      webViewRef.current?.injectJavaScript(`updateMarkers('${JSON.stringify(dataForWebview)}'); true;`);
-    }
-  }, [markers, allPlants, allUsers]);
-
-  const fetchNearbyPOIs = async (radius: number = 5) => {
+  const fetchNearbyPOIs = async (radius: number = 5, showFeedback: boolean = false) => {
     try {
       const lat = selectedLocation?.lat || 45.4353;
       const lng = selectedLocation?.lng || 28.0079;
@@ -64,10 +54,43 @@ export default function MapComponent({ isAdmin = false, currentUserName = 'Utili
       }
       const response = await api.get(url);
       setMarkers(response.data);
+
+      if (showFeedback) {
+        setScanMessage(`🌿 S-au găsit ${response.data.length} plante în raza de ${radius}km.`);
+        setTimeout(() => setScanMessage(null), 3500);
+      }
     } catch (error: any) {
-      Alert.alert("Eroare Scanare", error.message);
+      console.log("Eroare Scanare", error.message);
     }
   };
+
+  useEffect(() => { 
+    if (isFocused) {
+      fetchNearbyPOIs(5, false); 
+    }
+  }, [activeFilterId, isFocused]);
+
+  useEffect(() => {
+    if (markers.length >= 0) {
+      const dataForWebview = {
+        points: markers,
+        isAdmin: isAdmin,
+        allPlants: allPlants, 
+        allUsers: allUsers,
+        currentUserName: currentUserName
+      };
+      
+      const jsCode = `
+        try {
+          if (typeof updateMarkers === 'function') {
+            updateMarkers(${JSON.stringify(dataForWebview)});
+          }
+        } catch(e) {}
+        true;
+      `;
+      webViewRef.current?.injectJavaScript(jsCode);
+    }
+  }, [markers, allPlants, allUsers]);
 
   const handleDeletePOI = (poiId: number) => {
     if (!isAdmin) return;
@@ -100,7 +123,7 @@ export default function MapComponent({ isAdmin = false, currentUserName = 'Utili
       <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
       <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
       <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
-      <style> body { padding: 0; margin: 0; } #map { height: 100vh; width: 100vw; } 
+      <style> body { padding: 0; margin: 0; background: #e0e0e0; } #map { height: 100vh; width: 100vw; } 
         .custom-popup { text-align: center; font-family: sans-serif; }
         .popup-title { font-weight: bold; font-size: 14px; color: #2e7d32; }
         .popup-btn { background: #2e7d32; color: white; border: none; padding: 6px 12px; border-radius: 6px; margin-top: 10px; cursor: pointer; }
@@ -130,24 +153,28 @@ export default function MapComponent({ isAdmin = false, currentUserName = 'Utili
         const customIcon = L.divIcon({ className: 'custom-div-icon', html: "<div class='leaf-marker'></div>", iconSize: [32, 45], iconAnchor: [16, 45] });
         const targetIcon = L.divIcon({ className: 'custom-div-icon', html: "<div class='leaf-marker target-marker'></div>", iconSize: [32, 45], iconAnchor: [16, 45] });
 
-        function updateMarkers(dataJson) {
-          markersLayer.clearLayers();
-          const data = JSON.parse(dataJson);
-          const plantsDict = data.allPlants || [];
-          const usersDict = data.allUsers || [];
+        function updateMarkers(data) {
+          try {
+            markersLayer.clearLayers();
+            const plantsDict = data.allPlants || [];
+            const usersDict = data.allUsers || [];
 
-          data.points.forEach(loc => {
-            const matchedPlant = plantsDict.find(p => p.id === loc.plant_id);
-            const matchedUser = usersDict.find(u => u.id === loc.user_id);
-            const plantName = matchedPlant ? matchedPlant.name_ro : "Plantă Scanată";
-            const userName = matchedUser ? matchedUser.username : (loc.user?.username || loc.username || "Utilizator");
-            
-            const popupContent = "<div class='custom-popup'><div class='popup-title'>🌿 " + plantName + "</div>" +
-              "<div>📍 de " + userName + "</div>" +
-              "<button class='popup-btn' onclick='window.ReactNativeWebView.postMessage(JSON.stringify({type: \\"show_details\\", poi: " + JSON.stringify(loc) + "}))'>Vezi Detalii</button></div>";
+            data.points.forEach(loc => {
+              const matchedPlant = plantsDict.find(p => p.id === loc.plant_id);
+              const matchedUser = usersDict.find(u => u.id === loc.user_id);
+              const plantName = matchedPlant ? matchedPlant.name_ro : "Plantă Scanată";
+              const userName = matchedUser ? matchedUser.username : (loc.user?.username || loc.username || "Utilizator");
+              
+              // CONDITIE NOUĂ: Afișăm linia de utilizator doar pentru Admin
+              const userLine = data.isAdmin ? "<div>📍 de " + userName + "</div>" : "";
 
-            L.marker([loc.latitude, loc.longitude], { icon: customIcon }).bindPopup(popupContent).addTo(markersLayer);
-          });
+              const popupContent = "<div class='custom-popup'><div class='popup-title'>🌿 " + plantName + "</div>" +
+                userLine +
+                "<button class='popup-btn' onclick='window.ReactNativeWebView.postMessage(JSON.stringify({type: \\"show_details\\", poiId: " + loc.id + "}))'>Vezi Detalii</button></div>";
+
+              L.marker([loc.latitude, loc.longitude], { icon: customIcon }).bindPopup(popupContent).addTo(markersLayer);
+            });
+          } catch(e) {}
         }
 
         map.on('click', function(e) {
@@ -161,30 +188,36 @@ export default function MapComponent({ isAdmin = false, currentUserName = 'Utili
   `;
 
   const handleMessage = async (event: any) => {
-    const data = JSON.parse(event.nativeEvent.data);
-    if (data.type === 'map_click') setSelectedLocation({ lat: data.lat, lng: data.lng });
-    if (data.type === 'show_details') {
-      setSelectedPoiDetails(data.poi);
-      setFullPlantInfo(null);
-      if (data.poi.plant_id) {
-        setIsLoadingInfo(true);
-        try {
-          const res = await api.get('/plants/' + data.poi.plant_id);
-          setFullPlantInfo(res.data);
-        } catch (err) { console.log("Eroare detalii server"); } finally { setIsLoadingInfo(false); }
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      if (data.type === 'map_click') setSelectedLocation({ lat: data.lat, lng: data.lng });
+      
+      if (data.type === 'show_details') {
+        const foundPoi = markers.find(m => m.id === data.poiId);
+        if (foundPoi) {
+          setSelectedPoiDetails(foundPoi);
+          setFullPlantInfo(null);
+          if (foundPoi.plant_id) {
+            setIsLoadingInfo(true);
+            try {
+              const res = await api.get('/plants/' + foundPoi.plant_id);
+              setFullPlantInfo(res.data);
+            } catch (err) { console.log("Eroare detalii server"); } finally { setIsLoadingInfo(false); }
+          }
+        }
       }
-    }
+    } catch(e) {}
   };
 
   const getCurrentLocation = async () => {
-    let { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') return;
-    let location = await Location.getCurrentPositionAsync({});
-    setSelectedLocation({ lat: location.coords.latitude, lng: location.coords.longitude });
-    webViewRef.current?.injectJavaScript(`map.setView([${location.coords.latitude}, ${location.coords.longitude}], 16); true;`);
+    try {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      let location = await Location.getCurrentPositionAsync({});
+      setSelectedLocation({ lat: location.coords.latitude, lng: location.coords.longitude });
+      webViewRef.current?.injectJavaScript(`map.setView([${location.coords.latitude}, ${location.coords.longitude}], 16); true;`);
+    } catch(e) {}
   };
-
-  useEffect(() => { fetchNearbyPOIs(5); }, [activeFilterId]);
 
   const getDisplayPlantName = (poi: any) => {
     if (fullPlantInfo?.name_ro) return fullPlantInfo.name_ro;
@@ -208,11 +241,18 @@ export default function MapComponent({ isAdmin = false, currentUserName = 'Utili
           <Search color="#2e7d32" size={18} style={{marginRight: 8}} />
           <Text style={styles.mainFilterText} numberOfLines={1}>{activeFilterName}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.scanButton} onPress={() => fetchNearbyPOIs(5)}>
+        
+        <TouchableOpacity style={styles.scanButton} onPress={() => fetchNearbyPOIs(5, true)}>
           <Radio color="#2e7d32" size={18} style={{marginRight: 8}} />
           <Text style={styles.scanButtonText}>Scan 5km</Text>
         </TouchableOpacity>
       </View>
+
+      {scanMessage && (
+        <View style={styles.toastContainer}>
+          <Text style={styles.toastText}>{scanMessage}</Text>
+        </View>
+      )}
 
       <Modal visible={isMenuVisible} animationType="fade" transparent={true}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setIsMenuVisible(false)}>
@@ -241,8 +281,17 @@ export default function MapComponent({ isAdmin = false, currentUserName = 'Utili
           <View style={styles.detailsModalContent}>
             {selectedPoiDetails && (
               <>
-                <Text style={styles.detailsTitle}>{getDisplayPlantName(selectedPoiDetails)}</Text>
-                <Text style={styles.detailsUser}>📍 Adăugat de: {getDisplayUserName(selectedPoiDetails)}</Text>
+                <Text style={[
+                  styles.detailsTitle, 
+                  !isAdmin && { marginTop: -8, marginBottom: 18 } // Ridică textul și balansează distanța față de poză
+                ]}>
+                  {getDisplayPlantName(selectedPoiDetails)}
+                </Text>
+                {isAdmin && (
+                  <Text style={styles.detailsUser}>
+                    📍 Adăugat de: {getDisplayUserName(selectedPoiDetails)}
+                  </Text>
+                )}
                 <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={true} contentContainerStyle={{ paddingBottom: 20 }}>
                   <Image source={{ uri: selectedPoiDetails.image_url || 'https://via.placeholder.com/400x300' }} style={styles.detailsImage} resizeMode="cover" />
                   <View style={styles.commentBox}>
@@ -288,7 +337,14 @@ export default function MapComponent({ isAdmin = false, currentUserName = 'Utili
         </View>
       </Modal>
 
-      <WebView ref={webViewRef} source={{ html: mapHTML }} onMessage={handleMessage} javaScriptEnabled={true} />
+      <WebView 
+        ref={webViewRef} 
+        source={{ html: mapHTML }} 
+        onMessage={handleMessage} 
+        javaScriptEnabled={true} 
+        onContentProcessDidTerminate={() => webViewRef.current?.reload()} 
+        startInLoadingState={true}
+      />
       
       <View style={styles.buttonContainer}>
         <TouchableOpacity style={styles.gpsButton} onPress={getCurrentLocation}>
@@ -311,6 +367,18 @@ const styles = StyleSheet.create({
   scanButton: { backgroundColor: '#fff', paddingVertical: 12, paddingHorizontal: 20, borderRadius: 25, elevation: 5, flexDirection: 'row', alignItems: 'center' },
   mainFilterText: { color: '#2e7d32', fontWeight: 'bold' },
   scanButtonText: { color: '#2e7d32', fontWeight: 'bold' },
+  toastContainer: { 
+    position: 'absolute', 
+    top: 135, 
+    alignSelf: 'center', 
+    backgroundColor: 'rgba(46, 125, 50, 0.9)', 
+    paddingHorizontal: 25, 
+    paddingVertical: 12, 
+    borderRadius: 25, 
+    zIndex: 100, 
+    elevation: 8 
+  },
+  toastText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center' },
   menuContent: { width: '80%', backgroundColor: '#fff', borderRadius: 20, padding: 20, maxHeight: '60%' },
   menuTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },

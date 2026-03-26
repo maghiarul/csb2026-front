@@ -1,9 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Image, Alert, ActivityIndicator, SafeAreaView, FlatList, ScrollView, TextInput } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useIsFocused } from '@react-navigation/native'; 
 import api from '../services/api';
 import { useLocation } from '../services/LocationContext';
-import { MOCK_PLANTS } from '../services/plantData';
 
 interface PostmanPlant {
   id: number;
@@ -13,6 +13,7 @@ interface PostmanPlant {
 }
 
 export default function ScanComponent() {
+  const isFocused = useIsFocused(); 
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -26,10 +27,28 @@ export default function ScanComponent() {
   const [selectedPlantId, setSelectedPlantId] = useState<number | null>(null);
   const [showFallbackList, setShowFallbackList] = useState(false);
   
-  // NOU: State pentru comentariul utilizatorului
   const [userComment, setUserComment] = useState('');
   
   const { coords } = useLocation();
+
+  // NOU: Descărcăm lista REALĂ de plante din baza de date pentru Dicționarul Fallback
+  const [allDbPlants, setAllDbPlants] = useState<PostmanPlant[]>([]);
+
+  useEffect(() => {
+    const fetchAllPlants = async () => {
+      try {
+        const response = await api.get('/plants');
+        setAllDbPlants(response.data);
+      } catch (e) {
+        console.log("Eroare la aducerea plantelor pentru fallback");
+      }
+    };
+    fetchAllPlants();
+  }, []);
+
+  if (!isFocused) {
+    return <View style={styles.container} />;
+  }
 
   if (!permission) return <View />;
   if (!permission.granted) {
@@ -67,20 +86,29 @@ export default function ScanComponent() {
         const data = response.data;
         
         if (data && data.plant_name) {
+          if (data.confidence !== undefined && data.confidence < 0.6) {
+            Alert.alert(
+              "Precizie Scăzută ⚠️", 
+              `Am detectat că ar putea fi "${data.plant_name}", dar siguranța este de doar ${(data.confidence * 100).toFixed(0)}%.\n\nTrebuie să avem o precizie de minim 60% pentru a salva punctul. Te rugăm să refaci poza, focalizând mai bine frunzele sau floarea.`
+            );
+            return; 
+          }
+
           const foundId = data.plant_id ? data.plant_id : -1;
           setMainResult({ id: foundId, name: data.plant_name, confidence: data.confidence });
           setSelectedPlantId(foundId); 
           setTopCandidates(data.top_candidates || []);
           
+          // REPARAT: Folosim plantele reale din DB în loc de "MOCK_PLANTS"
           if (data.fallback_plants && data.fallback_plants.length > 0) {
             setFallbackPlants(data.fallback_plants);
           } else {
-            const localFallback = MOCK_PLANTS.map(p => ({
+            const realFallback = allDbPlants.map((p: any) => ({
               id: Number(p.id),
-              name_ro: p.name,
-              name_latin: "Necunoscut"
+              name_ro: p.name_ro,
+              name_latin: p.name_latin || "Necunoscut"
             }));
-            setFallbackPlants(localFallback);
+            setFallbackPlants(realFallback);
           }
         } else {
           Alert.alert("Eroare de Format", "Serverul nu a recunoscut planta.");
@@ -95,7 +123,7 @@ export default function ScanComponent() {
 
   const savePointToDatabase = async () => {
     if (!coords) {
-      Alert.alert("Harta este goală", "Nu ai selectat o locație! Mergi în tab-ul 'Hartă', apasă lung pe o zonă pentru a seta locația.");
+      Alert.alert("Harta este goală", "Nu ai selectat o locație! Mergi în tab-ul 'Hartă', apasă pe iconița 📍 pentru a seta locația.");
       return;
     }
 
@@ -104,7 +132,7 @@ export default function ScanComponent() {
     if (selectedPlantId === -1) {
       Alert.alert(
         "Plantă Neînregistrată ⚠️", 
-        "AI-ul a recunoscut planta, dar ea nu există încă în baza de date.\n\nTe rog să apeși pe butonul 'Vezi lista completă' și să selectezi manual specia corectă înainte de a o salva pe hartă!"
+        "AI-ul a recunoscut planta, dar ea nu se potrivește sigur cu una din cele 20 de specii din baza de date.\n\nTe rog să apeși pe butonul 'Vezi lista completă' și să selectezi manual specia corectă înainte de a o salva pe hartă!"
       );
       return;
     }
@@ -126,7 +154,6 @@ export default function ScanComponent() {
       formData.append('longitude', coords.lng.toString());
       formData.append('plant_id', selectedPlantId.toString());
       
-      // NOU: Folosim comentariul utilizatorului, dacă există. Altfel punem textul default.
       const finalComment = userComment.trim() !== '' 
         ? userComment 
         : `Identificat prin scanare: ${selectedName}`;
@@ -150,7 +177,7 @@ export default function ScanComponent() {
     setFallbackPlants([]);
     setSelectedPlantId(null);
     setShowFallbackList(false);
-    setUserComment(''); // Curățăm și comentariul
+    setUserComment('');
   };
 
   const resetScan = () => {
@@ -203,7 +230,6 @@ export default function ScanComponent() {
               <Text style={styles.fallbackText}>Nu este aici? Vezi lista completă (Fallback) 🔍</Text>
             </TouchableOpacity>
 
-            {/* NOU: Căsuța de text pentru comentariu */}
             <View style={styles.commentInputContainer}>
               <Text style={styles.commentInputLabel}>📝 Adaugă o notiță (opțional):</Text>
               <TextInput
@@ -249,7 +275,7 @@ export default function ScanComponent() {
                                     }}
                                 >
                                     <Text style={[styles.candidateName, isSelected && styles.candidateNameSelected, {fontSize: 14}]}>
-                                        {item.name_ro} ({item.name_latin})
+                                        {item.name_ro} {item.name_latin !== 'Necunoscut' ? `(${item.name_latin})` : ''}
                                     </Text>
                                 </TouchableOpacity>
                             );
@@ -320,12 +346,9 @@ const styles = StyleSheet.create({
   confidenceLabel: { fontSize: 12, color: '#666', fontWeight: 'bold' },
   fallbackTextButton: { paddingVertical: 15, alignItems: 'center', borderTopWidth: 1, borderTopColor: '#eee', marginTop: 10 },
   fallbackText: { color: '#2e7d32', textDecorationLine: 'underline', fontSize: 13, fontWeight: 'bold' },
-  
-  // NOU: Stiluri pentru input-ul de comentariu
   commentInputContainer: { marginTop: 15, marginBottom: 10 },
   commentInputLabel: { fontSize: 13, fontWeight: 'bold', color: '#666', marginBottom: 8 },
   commentInput: { backgroundColor: '#f9fbe7', borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 12, padding: 12, fontSize: 14, color: '#333', minHeight: 60, textAlignVertical: 'top' },
-
   fallbackModal: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
   fallbackContent: { width: '90%', maxHeight: '80%', backgroundColor: '#fff', borderRadius: 20, padding: 15 },
   fallbackHeader: { fontSize: 18, fontWeight: 'bold', marginBottom: 15, color: '#2e7d32', textAlign: 'center' },
