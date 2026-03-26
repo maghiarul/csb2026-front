@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, FlatList, TouchableOpacity, Image, Modal, ScrollView, SafeAreaView, ActivityIndicator, Alert } from 'react-native';
+// IMPORTĂM ICONIȚELE LUCIDE
+import { 
+  Leaf, 
+  BookOpen, 
+  CheckCircle2, 
+  AlertTriangle, 
+  Trash2, 
+  Info, 
+  ChevronRight,
+  XCircle
+} from 'lucide-react-native';
 import api from '../services/api';
 
 interface PlantListProps {
@@ -20,7 +31,6 @@ export default function PlantListScreen({ isAdmin = false, route }: PlantListPro
   const [plants, setPlants] = useState<Plant[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // State-uri pentru Modal
   const [selectedPlant, setSelectedPlant] = useState<Plant | null>(null);
   const [fullPlantInfo, setFullPlantInfo] = useState<any | null>(null);
   const [isLoadingInfo, setIsLoadingInfo] = useState(false);
@@ -32,7 +42,7 @@ export default function PlantListScreen({ isAdmin = false, route }: PlantListPro
       setPlants(response.data);
     } catch (error) {
       console.error("Eroare Enciclopedie:", error);
-      Alert.alert("Eroare", "Nu am putut descărca plantele de pe server.");
+      Alert.alert("Eroare", "Nu am putut descărca plantele.");
     } finally {
       setLoading(false);
     }
@@ -42,18 +52,15 @@ export default function PlantListScreen({ isAdmin = false, route }: PlantListPro
     fetchPlants();
   }, []);
 
-  // Funcția care se apelează când dai click pe o plantă din listă
   const handleSelectPlant = async (plant: Plant) => {
     setSelectedPlant(plant);
-    setFullPlantInfo(null); // Resetăm datele vechi
+    setFullPlantInfo(null);
     setIsLoadingInfo(true);
-    
     try {
-      // Cerem de la server toate detaliile pentru planta selectată
       const res = await api.get(`/plants/${plant.id}`);
       setFullPlantInfo(res.data);
     } catch (error) {
-      console.log("Nu am putut aduce detaliile complete:", error);
+      console.log("Eroare detalii:", error);
     } finally {
       setIsLoadingInfo(false);
     }
@@ -61,56 +68,44 @@ export default function PlantListScreen({ isAdmin = false, route }: PlantListPro
 
   const handleDeletePlant = (plantId: number) => {
     if (!isUserAdmin) return; 
-
-    Alert.alert(
-      "Confirmare Ștergere",
-      "Ești sigur că vrei să ștergi definitiv această plantă din Enciclopedie?",
-      [
-        { text: "Anulează", style: "cancel" },
-        {
-          text: "Șterge",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await api.delete(`/admin/plants/${plantId}`);
-              Alert.alert("Succes", "Planta a fost ștearsă definitiv!");
-              setSelectedPlant(null);
-              fetchPlants(); // Reîncărcăm lista generală
-            } catch (error) {
-              Alert.alert("Eroare", "Nu poți șterge planta. Asigură-te că ești logat ca Admin.");
-            }
-          }
-        }
-      ]
-    );
+    Alert.alert("Ștergere", "Ești sigur că vrei să elimini planta?", [
+      { text: "Anulează", style: "cancel" },
+      { text: "Șterge", style: "destructive", onPress: async () => {
+          try {
+            await api.delete(`/admin/plants/${plantId}`);
+            Alert.alert("Succes", "Planta a fost ștearsă!");
+            setSelectedPlant(null);
+            fetchPlants();
+          } catch (error) { Alert.alert("Eroare", "Eroare la ștergere."); }
+      }}
+    ]);
   };
 
   const renderPlantCard = ({ item }: { item: Plant }) => {
-    const imageUrl = item.image_url 
-      ? { uri: item.image_url } 
-      : { uri: 'https://via.placeholder.com/150/2e7d32/FFFFFF?text=Fara+Poza' };
+    const imageUrl = item.image_url ? { uri: item.image_url } : { uri: 'https://via.placeholder.com/150/2e7d32/FFFFFF?text=EcoScan' };
 
     return (
       <TouchableOpacity style={styles.card} onPress={() => handleSelectPlant(item)}>
-        <Image source={imageUrl} style={styles.cardImage} />
+        <Image source={imageUrl} style={styles.cardImage} resizeMode="cover" />
         <View style={styles.cardContent}>
           <Text style={styles.plantName}>{item.name_ro || "Nume Necunoscut"}</Text>
           <Text style={styles.scientificName}>{item.name_latin || "Specie Necunoscută"}</Text>
-          <Text style={styles.tapToRead}>Apasă pentru detalii 📖</Text>
+          <View style={styles.tapToReadContainer}>
+            <Text style={styles.tapToRead}>DETALII</Text>
+            <ChevronRight color="#A1887F" size={14} style={{marginLeft: 4}} />
+          </View>
         </View>
       </TouchableOpacity>
     );
   };
 
-  const getSafeText = (text: string | null | undefined, fallback: string) => {
-    if (!text || text.trim() === '') return fallback;
-    return text;
-  };
+  const getSafeText = (text: string | null | undefined, fallback: string) => (!text || text.trim() === '') ? fallback : text;
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Enciclopedia Plantelor 🌿</Text>
+        <Leaf color="#1b5e20" size={28} style={{marginBottom: 5}} />
+        <Text style={styles.headerTitle}>Enciclopedia Plantelor</Text>
       </View>
 
       {loading ? (
@@ -126,91 +121,66 @@ export default function PlantListScreen({ isAdmin = false, route }: PlantListPro
           renderItem={renderPlantCard}
           onRefresh={fetchPlants}
           refreshing={loading}
-          ListEmptyComponent={<Text style={styles.emptyText}>Nu există nicio plantă în baza de date.</Text>}
+          ListEmptyComponent={<Text style={styles.emptyText}>Nu există plante în baza de date.</Text>}
         />
       )}
 
-      {/* MODAL DETALII (Arhitectură nouă, la fel ca pe Hartă) */}
-      <Modal 
-        visible={!!selectedPlant} 
-        animationType="slide" 
-        transparent={true}
-        onRequestClose={() => setSelectedPlant(null)}
-      >
+      <Modal visible={!!selectedPlant} animationType="slide" transparent={true} onRequestClose={() => setSelectedPlant(null)}>
         <View style={styles.modalOverlay}>
-          {/* Fundal apăsabil pentru închidere */}
-          <TouchableOpacity 
-            style={StyleSheet.absoluteFill} 
-            activeOpacity={1} 
-            onPress={() => setSelectedPlant(null)} 
-          />
-
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setSelectedPlant(null)} />
           <View style={styles.modalContent}>
             {selectedPlant && (
               <>
-                <Text style={styles.modalTitle}>{selectedPlant.name_ro || "Nume Necunoscut"}</Text>
-                <Text style={[styles.scientificName, {fontSize: 18, marginBottom: 15, textAlign: 'center'}]}>
-                  {selectedPlant.name_latin || "Specie Necunoscută"}
-                </Text>
+                <Text style={styles.modalTitle}>{selectedPlant.name_ro}</Text>
+                <Text style={styles.modalScientificName}>{selectedPlant.name_latin}</Text>
                 
-                <ScrollView 
-                  style={styles.scrollArea} 
-                  showsVerticalScrollIndicator={true}
-                  contentContainerStyle={{ paddingBottom: 20 }}
-                >
-                  <Image 
-                    source={selectedPlant.image_url ? { uri: selectedPlant.image_url } : { uri: 'https://via.placeholder.com/400x300/e0e0e0/888888?text=Fara+Poza' }} 
-                    style={styles.modalImage} 
-                    resizeMode="cover"
-                  />
+                <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={true} contentContainerStyle={{ paddingBottom: 20 }}>
+                  <Image source={selectedPlant.image_url ? { uri: selectedPlant.image_url } : { uri: 'https://via.placeholder.com/400x300/e0e0e0/888888?text=Fara+Poza' }} style={styles.modalImage} resizeMode="cover" />
                   
-                  {/* Zona de descărcare date */}
                   {isLoadingInfo ? (
                      <View style={{padding: 20, alignItems: 'center'}}>
                        <ActivityIndicator size="small" color="#2e7d32" />
-                       <Text style={{color: '#666', marginTop: 10, fontSize: 12}}>Aducem filele enciclopediei...</Text>
+                       <Text style={{color: '#666', marginTop: 10}}>Se încarcă...</Text>
                      </View>
                   ) : fullPlantInfo ? (
                     <View style={styles.encyclopediaSection}>
-                      <Text style={styles.sectionSubtitle}>📖 Descriere:</Text>
-                      <Text style={styles.sectionText}>
-                        {getSafeText(fullPlantInfo.description, "Informația nu a fost adăugată încă.")}
-                      </Text>
+                      <View style={styles.sectionHeaderRow}>
+                        <Info color="#2e7d32" size={18} />
+                        <Text style={styles.sectionSubtitle}>DESCRIERE</Text>
+                      </View>
+                      <Text style={styles.sectionText}>{getSafeText(fullPlantInfo.description, "Fără descriere.")}</Text>
 
-                      <Text style={styles.sectionSubtitle}>🌿 Părți utilizabile:</Text>
-                      <Text style={styles.sectionText}>
-                         {getSafeText(fullPlantInfo.usable_parts, "Nu sunt specificate.")}
-                      </Text>
+                      <View style={styles.sectionHeaderRow}>
+                        <Leaf color="#2e7d32" size={18} />
+                        <Text style={styles.sectionSubtitle}>PĂRȚI UTILIZABILE</Text>
+                      </View>
+                      <Text style={styles.sectionText}>{getSafeText(fullPlantInfo.usable_parts, "Nu sunt specificate.")}</Text>
 
-                      <Text style={styles.sectionSubtitle}>✅ Beneficii pentru sănătate:</Text>
-                      <Text style={styles.sectionText}>
-                         {getSafeText(fullPlantInfo.health_benefits, "Nu au fost documentate beneficii specifice.")}
-                      </Text>
+                      <View style={styles.sectionHeaderRow}>
+                        <CheckCircle2 color="#2e7d32" size={18} />
+                        <Text style={styles.sectionSubtitle}>BENEFICII</Text>
+                      </View>
+                      <Text style={styles.sectionText}>{getSafeText(fullPlantInfo.health_benefits, "Nu sunt documentate.")}</Text>
 
-                      <Text style={styles.sectionSubtitle}>⚠️ Contraindicații:</Text>
-                      <Text style={[styles.sectionText, {backgroundColor: '#ffebee', color: '#c62828'}]}>
-                        {getSafeText(fullPlantInfo.contraindications, "Nu sunt cunoscute contraindicații. Consultă un medic.")}
-                      </Text>
+                      <View style={styles.sectionHeaderRow}>
+                        <AlertTriangle color="#c62828" size={18} />
+                        <Text style={[styles.sectionSubtitle, {color: '#c62828'}]}>CONTRAINDICAȚII</Text>
+                      </View>
+                      <Text style={[styles.sectionText, {backgroundColor: '#ffebee', color: '#c62828'}]}>{getSafeText(fullPlantInfo.contraindications, "Consultați un medic.")}</Text>
                     </View>
-                  ) : (
-                    <Text style={{textAlign: 'center', color: '#999', marginTop: 20}}>
-                      Nu am putut încărca detaliile.
-                    </Text>
-                  )}
+                  ) : null}
                 </ScrollView>
 
                 <View style={styles.modalButtonsRow}>
                   <TouchableOpacity style={[styles.actionButton, {backgroundColor: '#2e7d32'}]} onPress={() => setSelectedPlant(null)}>
                     <Text style={styles.actionButtonText}>Închide</Text>
                   </TouchableOpacity>
-
                   {isUserAdmin && (
                     <TouchableOpacity style={[styles.actionButton, {backgroundColor: '#d32f2f'}]} onPress={() => handleDeletePlant(selectedPlant.id)}>
-                      <Text style={styles.actionButtonText}>🗑️ Șterge</Text>
+                      <Trash2 color="#fff" size={20} />
                     </TouchableOpacity>
                   )}
                 </View>
-
               </>
             )}
           </View>
@@ -222,52 +192,38 @@ export default function PlantListScreen({ isAdmin = false, route }: PlantListPro
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F1F8E9' }, 
-  header: { 
-    paddingTop: 50, 
-    paddingBottom: 20, 
-    paddingHorizontal: 20,
-    backgroundColor: '#fff', 
-    borderBottomLeftRadius: 30, 
-    borderBottomRightRadius: 30, 
-    shadowColor: '#2e7d32', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.05, shadowRadius: 20, elevation: 8, zIndex: 10
-  },
-  headerTitle: { fontSize: 26, fontWeight: '900', color: '#1b5e20', textAlign: 'left', letterSpacing: -0.5 },
-  listContainer: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 100 },
+  header: { paddingTop: 60, paddingBottom: 10, paddingHorizontal: 20, alignItems: 'center' },
+  headerTitle: { fontSize: 26, fontWeight: '900', color: '#1b5e20', textAlign: 'center', letterSpacing: -0.5 },
+  listContainer: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 100 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyText: { textAlign: 'center', marginTop: 50, color: '#666', fontSize: 16 },
-  card: { backgroundColor: '#fff', borderRadius: 20, marginBottom: 15, overflow: 'hidden', flexDirection: 'row', shadowColor: '#000', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 3 },
-  cardImage: { width: 100, height: 100, borderRadius: 15, margin: 10 },
-  cardContent: { flex: 1, padding: 15, paddingLeft: 5, justifyContent: 'center' },
-  plantName: { fontSize: 18, fontWeight: '800', color: '#2e7d32', marginBottom: 2 },
-  scientificName: { fontSize: 13, fontStyle: 'italic', color: '#888', marginBottom: 6 },
-  tapToRead: { fontSize: 11, color: '#A1887F', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
-  
-  // Stiluri actualizate pentru Modal (la fel ca la Hartă)
+  emptyText: { textAlign: 'center', marginTop: 50, color: '#666' },
+  card: { 
+    backgroundColor: '#fff', borderRadius: 25, marginBottom: 20, overflow: 'hidden', 
+    flexDirection: 'column', alignItems: 'center', elevation: 4
+  },
+  cardImage: { width: '100%', height: 160, backgroundColor: '#f5f5f5' },
+  cardContent: { padding: 20, alignItems: 'center', width: '100%' },
+  plantName: { fontSize: 20, fontWeight: '800', color: '#2e7d32', marginBottom: 4, textAlign: 'center' },
+  scientificName: { fontSize: 14, fontStyle: 'italic', color: '#888', marginBottom: 12, textAlign: 'center' },
+  tapToReadContainer: { flexDirection: 'row', alignItems: 'center' },
+  tapToRead: { fontSize: 11, color: '#A1887F', fontWeight: '800', letterSpacing: 1 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   modalContent: { 
-    backgroundColor: '#fff', 
-    borderTopLeftRadius: 30, 
-    borderTopRightRadius: 30, 
-    paddingHorizontal: 25, 
-    paddingTop: 25,
-    paddingBottom: 40, // Deasupra barei iPhone
-    maxHeight: '88%', 
-    elevation: 20 
+    backgroundColor: '#fff', borderTopLeftRadius: 35, borderTopRightRadius: 35, 
+    paddingHorizontal: 25, paddingTop: 25, paddingBottom: 40, maxHeight: '90%'
   },
-  modalTitle: { fontSize: 26, fontWeight: '900', color: '#1b5e20', marginBottom: 2, textAlign: 'center' },
-  
-  scrollArea: { 
-    flexShrink: 1, 
-    marginBottom: 15 
+  modalTitle: { fontSize: 28, fontWeight: '900', color: '#1b5e20', textAlign: 'center' },
+  modalScientificName: { fontSize: 18, fontStyle: 'italic', color: '#888', textAlign: 'center', marginBottom: 20 },
+  scrollArea: { flexShrink: 1, marginBottom: 15 },
+  modalImage: { width: '100%', height: 240, borderRadius: 25, marginBottom: 20 },
+  encyclopediaSection: { width: '100%', alignItems: 'center' },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', marginTop: 20, marginBottom: 8 },
+  sectionSubtitle: { fontSize: 13, fontWeight: '900', color: '#2e7d32', marginLeft: 8, letterSpacing: 1 },
+  sectionText: { 
+    fontSize: 15, color: '#444', lineHeight: 22, backgroundColor: '#F9FBE7', 
+    padding: 15, borderRadius: 15, width: '100%', textAlign: 'center'
   },
-  
-  modalImage: { width: '100%', height: 220, borderRadius: 25, marginBottom: 15, backgroundColor: '#f5f5f5' },
-  
-  encyclopediaSection: { marginTop: 5 },
-  sectionSubtitle: { fontSize: 12, fontWeight: '800', color: '#2e7d32', marginTop: 10, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
-  sectionText: { fontSize: 14, color: '#444', lineHeight: 20, backgroundColor: '#F9FBE7', padding: 12, borderRadius: 12, overflow: 'hidden' },
-  
-  modalButtonsRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#eee' },
-  actionButton: { flex: 1, padding: 16, borderRadius: 15, alignItems: 'center' },
+  modalButtonsRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#eee' },
+  actionButton: { flex: 1, padding: 18, borderRadius: 18, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
   actionButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
 });

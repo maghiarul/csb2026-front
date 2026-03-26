@@ -3,8 +3,10 @@ import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, ActivityInd
 import api, { setAuthToken } from '../services/api';
 
 // REPARAT: Acum acceptă "role" ca argument
+// Modifică doar interfața de la începutul fișierului
 interface LoginProps {
-  onLoginSuccess: (role: string) => void;
+  // REPARAT: Spunem că acceptăm și al doilea argument (userData)
+  onLoginSuccess: (role: string, userData: any) => void; 
   onGoToRegister: () => void;
 }
 
@@ -23,8 +25,9 @@ export default function LoginScreen({ onLoginSuccess, onGoToRegister }: LoginPro
 
       // Determinăm rolul
       const userRole = response.data.user?.role || (email === 'test12@gmail.com' ? 'admin' : 'user');
+      const userData = response.data.user; // Adaugă linia asta ca să iei tot obiectul (nume, id, etc)
       
-      onLoginSuccess(userRole); 
+onLoginSuccess(userRole, userData);
     } catch (error: any) {
       console.error(error);
       const msg = error.response?.data?.detail || "Email sau parolă incorectă.";
