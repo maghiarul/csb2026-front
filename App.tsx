@@ -75,7 +75,12 @@ if (showSplash) return <SplashScreen onFinish={() => setShowSplash(false)} />;
 >
           <Tab.Screen name="Hartă" component={MapComponent} options={{ tabBarIcon: () => <Text>🗺️</Text> }} />
           <Tab.Screen name="Scanează" component={ScanComponent} options={{ tabBarIcon: () => <Text>📸</Text> }} />
-          <Tab.Screen name="Enciclopedie" component={PlantListScreen} options={{ tabBarIcon: () => <Text>🌿</Text> }} />
+          <Tab.Screen 
+            name="Enciclopedie" 
+            options={{ tabBarIcon: () => <Text>🌿</Text> }}
+          >
+            {() => <PlantListScreen isAdmin={isAdmin} />}
+          </Tab.Screen>
           
           {isAdmin && (
             <Tab.Screen 

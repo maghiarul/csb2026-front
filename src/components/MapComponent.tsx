@@ -1,12 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, Alert, SafeAreaView, Modal, FlatList } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, Alert, SafeAreaView, Modal, FlatList, Image, ScrollView, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location'; 
 import { useLocation } from '../services/LocationContext';
 import { MOCK_PLANTS } from '../services/plantData';
 import api from '../services/api'; 
 
-export default function MapComponent() {
+interface MapProps {
+  isAdmin?: boolean;
+}
+
+export default function MapComponent({ isAdmin = false }: MapProps) {
   const webViewRef = useRef<WebView>(null);
   const [selectedLocation, setSelectedLocation] = useState<{lat: number, lng: number} | null>(null);
   const [markers, setMarkers] = useState<any[]>([]);
@@ -14,9 +18,13 @@ export default function MapComponent() {
   const [activeFilterId, setActiveFilterId] = useState<string | number | null>(null);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
   
+  // State-uri pentru Modalul de Detalii
+  const [selectedPoiDetails, setSelectedPoiDetails] = useState<any | null>(null);
+  const [fullPlantInfo, setFullPlantInfo] = useState<any | null>(null);
+  const [isLoadingInfo, setIsLoadingInfo] = useState(false);
+  
   const { setCoords } = useLocation();
 
-  // --- GET: Aduce punctele pe hartă ---
   const fetchNearbyPOIs = async (radius: number = 5) => {
     try {
       const lat = selectedLocation?.lat || 45.4353;
@@ -29,19 +37,25 @@ export default function MapComponent() {
 
       const response = await api.get(url);
       setMarkers(response.data);
-      const pointsStr = JSON.stringify(response.data);
+      
+      const dataForWebview = {
+        points: response.data,
+        isAdmin: isAdmin
+      };
+      
+      const pointsStr = JSON.stringify(dataForWebview);
       
       if (webViewRef.current) {
         webViewRef.current.injectJavaScript(`updateMarkers('${pointsStr}'); true;`);
       }
-      Alert.alert("Harta Actualizată", `Am găsit ${response.data.length} puncte.`);
     } catch (error) {
       console.error("Eroare Scan:", error);
     }
   };
 
-  // --- DELETE: Ștergere pentru Admin ---
   const handleDeletePOI = (poiId: number) => {
+    if (!isAdmin) return;
+    
     Alert.alert(
       "Confirmare Admin",
       "Sigur vrei să elimini acest punct de pe hartă?",
@@ -55,10 +69,14 @@ export default function MapComponent() {
               await api.delete(`/admin/poi/${poiId}`);
               const updated = markers.filter(m => m.id !== poiId);
               setMarkers(updated);
-              webViewRef.current?.injectJavaScript(`updateMarkers('${JSON.stringify(updated)}'); true;`);
+              
+              const dataForWebview = { points: updated, isAdmin: isAdmin };
+              webViewRef.current?.injectJavaScript(`updateMarkers('${JSON.stringify(dataForWebview)}'); true;`);
+              
+              setSelectedPoiDetails(null); 
               Alert.alert("Succes", "Punctul a fost șters.");
             } catch (error) {
-              Alert.alert("Eroare", "Eroare la ștergere. Ești admin?");
+              Alert.alert("Eroare", "Eroare la ștergere. Verifică drepturile.");
             }
           }
         }
@@ -66,20 +84,15 @@ export default function MapComponent() {
     );
   };
 
-  // --- PREGĂTIRE PUNCT (Fără POST) ---
   const handleSetPoint = () => {
     if (!selectedLocation) return;
-
-    // Salvăm doar local în memorie (LocationContext)
     setCoords(selectedLocation); 
-    
     Alert.alert(
       "📍 Locație Pregătită!", 
       "Am memorat acest punct. Mergi la tab-ul 'Scanează' pentru a face o poză plantei și a salva totul pe hartă."
     );
   };
 
-  // --- HTML HARTĂ ---
   const mapHTML = `
     <!DOCTYPE html>
     <html>
@@ -87,26 +100,46 @@ export default function MapComponent() {
       <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
       <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
       <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-      <style> body { padding: 0; margin: 0; } #map { height: 100vh; width: 100vw; } </style>
+      <style> 
+        body { padding: 0; margin: 0; } 
+        #map { height: 100vh; width: 100vw; } 
+        .custom-popup { text-align: center; font-family: sans-serif; }
+        .popup-title { font-weight: bold; font-size: 14px; color: #2e7d32; margin-bottom: 2px; }
+        .popup-user { font-size: 11px; color: #666; margin-bottom: 10px; }
+        .popup-btn { background: #2e7d32; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; width: 100%; font-weight: bold; }
+      </style>
     </head>
     <body>
       <div id="map"></div>
       <script>
-        var map = L.map('map').setView([45.4353, 28.0080], 13);
+        var map = L.map('map', { zoomControl: false }).setView([45.4353, 28.0080], 13);
+        L.control.zoom({ position: 'topleft' }).addTo(map);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
         var currentMarker = null;
         var markersLayer = L.layerGroup().addTo(map);
 
-        function updateMarkers(locationsJson) {
+        function updateMarkers(dataJson) {
           markersLayer.clearLayers();
-          const locations = JSON.parse(locationsJson);
+          const data = JSON.parse(dataJson);
+          const locations = data.points;
+          
           locations.forEach(loc => {
             const lat = loc.lat || loc.latitude;
             const lng = loc.lng || loc.longitude;
             
-            const popupContent = "<b>" + (loc.plant?.name_ro || "Plantă") + "</b><br>" +
-                                 "<button onclick=\\"window.ReactNativeWebView.postMessage(JSON.stringify({type: 'delete_poi', id: " + loc.id + "}))\\" " +
-                                 "style='margin-top:10px; color:red; border:1px solid red; background:white; padding:5px; border-radius:4px;'>Șterge (Admin)</button>";
+            let extName = null;
+            if (loc.comment && loc.comment.includes(': ')) {
+                extName = loc.comment.split(': ')[1];
+            }
+            const plantName = loc.plant?.name_ro || loc.plant?.name || extName || "Plantă Scanată";
+            const userName = loc.user?.username || loc.user?.email || loc.username || loc.email || "Anonim";
+            
+            const popupContent = 
+              "<div class='custom-popup'>" +
+                "<div class='popup-title'>🌿 " + plantName + "</div>" +
+                "<div class='popup-user'>📍 adăugat de " + userName + "</div>" +
+                "<button class='popup-btn' onclick='window.ReactNativeWebView.postMessage(JSON.stringify({type: \\"show_details\\", poi: " + JSON.stringify(loc) + "}))'>Vezi Detalii & Poză</button>" +
+              "</div>";
 
             L.marker([lat, lng]).addTo(markersLayer).bindPopup(popupContent);
           });
@@ -128,10 +161,32 @@ export default function MapComponent() {
     </html>
   `;
 
-  const handleMessage = (event: any) => {
+  // === AICI SE ÎNTÂMPLĂ MAGIA CU DATELE DE LA COLEGUL TĂU ===
+  const handleMessage = async (event: any) => {
     const data = JSON.parse(event.nativeEvent.data);
-    if (data.type === 'map_click') setSelectedLocation({ lat: data.lat, lng: data.lng });
-    if (data.type === 'delete_poi') handleDeletePOI(data.id);
+    
+    if (data.type === 'map_click') {
+      setSelectedLocation({ lat: data.lat, lng: data.lng });
+    }
+    
+    if (data.type === 'show_details') {
+      // 1. Setăm imediat POI-ul ca să se deschidă Modalul
+      setSelectedPoiDetails(data.poi);
+      setFullPlantInfo(null); // Resetăm datele vechi
+      
+      // 2. Facem request-ul direct către /plants/{id}
+      if (data.poi.plant_id) {
+        setIsLoadingInfo(true);
+        try {
+          const res = await api.get(`/plants/${data.poi.plant_id}`);
+          setFullPlantInfo(res.data); // Aici se salvează descrierea, beneficiile, etc.
+        } catch (err) {
+          console.log("Nu am putut aduce detaliile plantei de la server:", err);
+        } finally {
+          setIsLoadingInfo(false);
+        }
+      }
+    }
   };
 
   const getCurrentLocation = async () => {
@@ -144,8 +199,27 @@ export default function MapComponent() {
 
   useEffect(() => { fetchNearbyPOIs(5); }, [activeFilterId]);
 
+  const getDisplayPlantName = (poi: any) => {
+    // Dacă am descărcat detalii complete, luăm numele oficial de acolo
+    if (fullPlantInfo?.name_ro) return fullPlantInfo.name_ro;
+    if (poi.plant?.name_ro) return poi.plant.name_ro;
+    if (poi.comment && poi.comment.includes(': ')) return poi.comment.split(': ')[1];
+    return "Plantă Scanată";
+  };
+
+  const getDisplayUserName = (poi: any) => {
+    return poi.user?.username || poi.user?.email || poi.username || poi.email || "Anonim";
+  };
+
+  // Funcție de siguranță pentru textele goale
+  const getSafeText = (text: string | null | undefined, fallback: string) => {
+    if (!text || text.trim() === '') return fallback;
+    return text;
+  };
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* Filtre Sus */}
       <View style={styles.filterArea}>
         <TouchableOpacity style={styles.mainFilterButton} onPress={() => setIsMenuVisible(true)}>
           <Text style={styles.mainFilterText} numberOfLines={1}>🔍 {activeFilterName}</Text>
@@ -155,6 +229,7 @@ export default function MapComponent() {
         </TouchableOpacity>
       </View>
 
+      {/* Modal Filtre */}
       <Modal visible={isMenuVisible} animationType="fade" transparent={true}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setIsMenuVisible(false)}>
           <View style={styles.menuContent}>
@@ -186,6 +261,98 @@ export default function MapComponent() {
         </TouchableOpacity>
       </Modal>
 
+      {/* MODAL DETALII PIN & ENCICLOPEDIE */}
+      <Modal 
+        visible={!!selectedPoiDetails} 
+        animationType="slide" 
+        transparent={true}
+        onRequestClose={() => setSelectedPoiDetails(null)}
+      >
+        <View style={styles.detailsModalOverlay}>
+          
+          {/* 1. Butonul invizibil de pe tot ecranul care închide meniul la click în afară */}
+          <TouchableOpacity 
+            style={StyleSheet.absoluteFill} 
+            activeOpacity={1} 
+            onPress={() => setSelectedPoiDetails(null)} 
+          />
+
+          {/* 2. Chenarul alb - Acum e un VIEW normal, nu Touchable, deci respectă perfect înălțimea! */}
+          <View style={styles.detailsModalContent}>
+            {selectedPoiDetails && (
+              <>
+                <Text style={styles.detailsTitle}>{getDisplayPlantName(selectedPoiDetails)}</Text>
+                <Text style={styles.detailsUser}>📍 Adăugat de: {getDisplayUserName(selectedPoiDetails)}</Text>
+                
+                {/* 3. ScrollView cu flexShrink forțat */}
+                <ScrollView 
+                  style={styles.scrollArea} 
+                  showsVerticalScrollIndicator={true}
+                  contentContainerStyle={{ paddingBottom: 20 }}
+                >
+                  <View style={styles.imageContainer}>
+                    <Image 
+                      source={selectedPoiDetails.image_url ? { uri: selectedPoiDetails.image_url } : { uri: 'https://via.placeholder.com/400x300/e0e0e0/888888?text=Fara+Poza' }} 
+                      style={styles.detailsImage} 
+                      resizeMode="cover"
+                    />
+                  </View>
+
+                  <View style={styles.commentBox}>
+                    <Text style={styles.commentLabel}>📝 Notițe utilizator:</Text>
+                    <Text style={styles.commentText}>{selectedPoiDetails.comment || "Niciun comentariu."}</Text>
+                  </View>
+
+                  {/* ZONA DE DATE DE LA SERVER */}
+                  {isLoadingInfo ? (
+                    <View style={{padding: 20, alignItems: 'center'}}>
+                      <ActivityIndicator size="small" color="#2e7d32" />
+                      <Text style={{color: '#666', marginTop: 10, fontSize: 12}}>Se încarcă detaliile plantei...</Text>
+                    </View>
+                  ) : fullPlantInfo ? (
+                    <View style={styles.encyclopediaSection}>
+                      <Text style={styles.encyclopediaHeader}>📚 Date din Enciclopedie</Text>
+
+                      <Text style={styles.sectionSubtitle}>📖 Descriere:</Text>
+                      <Text style={styles.sectionText}>
+                        {getSafeText(fullPlantInfo.description, "Informația nu a fost adăugată încă.")}
+                      </Text>
+
+                      <Text style={styles.sectionSubtitle}>🌿 Părți utilizabile:</Text>
+                      <Text style={styles.sectionText}>
+                        {getSafeText(fullPlantInfo.usable_parts, "Nu sunt specificate.")}
+                      </Text>
+
+                      <Text style={styles.sectionSubtitle}>✅ Beneficii pentru sănătate:</Text>
+                      <Text style={styles.sectionText}>
+                        {getSafeText(fullPlantInfo.health_benefits, "Nu au fost documentate beneficii specifice.")}
+                      </Text>
+
+                      <Text style={styles.sectionSubtitle}>⚠️ Contraindicații:</Text>
+                      <Text style={[styles.sectionText, {backgroundColor: '#ffebee', color: '#c62828'}]}>
+                        {getSafeText(fullPlantInfo.contraindications, "Nu sunt cunoscute contraindicații. Consultă un medic.")}
+                      </Text>
+                    </View>
+                  ) : null}
+                </ScrollView>
+
+                {/* 4. Butoanele Fixe - Vor sta MEREU jos, indiferent cât de mult text e sus */}
+                <View style={styles.actionButtonsRow}>
+                  <TouchableOpacity style={[styles.actionBtn, {backgroundColor: '#2e7d32'}]} onPress={() => setSelectedPoiDetails(null)}>
+                    <Text style={styles.actionBtnText}>Închide</Text>
+                  </TouchableOpacity>
+
+                  {isAdmin && (
+                    <TouchableOpacity style={[styles.actionBtn, {backgroundColor: '#d32f2f'}]} onPress={() => handleDeletePOI(selectedPoiDetails.id)}>
+                      <Text style={styles.actionBtnText}>🗑️ Șterge Pin</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
       <WebView ref={webViewRef} source={{ html: mapHTML }} onMessage={handleMessage} javaScriptEnabled={true} />
       
       <View style={styles.buttonContainer}>
@@ -215,7 +382,32 @@ const styles = StyleSheet.create({
   menuItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#eee' },
   menuItemText: { fontSize: 16, color: '#444' },
   activeMenuText: { color: '#2e7d32', fontWeight: 'bold' },
-  buttonContainer: { position: 'absolute', bottom: 120, right: 20, gap: 15 },
+  buttonContainer: { position: 'absolute', bottom: 120, right: 20, gap: 15, zIndex: 10 },
   gpsButton: { backgroundColor: '#fff', width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 8 },
-  setPointButton: { backgroundColor: '#2e7d32', width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 8 }
+  setPointButton: { backgroundColor: '#2e7d32', width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 8 },
+  detailsModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  detailsModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingHorizontal: 25,
+    paddingTop: 25,
+    paddingBottom: 40, // Asta ridică butoanele peste bara de jos a iPhone-ului!
+    maxHeight: '88%',
+  }, // Limitează cardul alb să nu iasă din ecran},
+  detailsTitle: { fontSize: 24, fontWeight: '900', color: '#1b5e20', textAlign: 'center', marginBottom: 2 },
+  detailsUser: { fontSize: 13, color: '#666', textAlign: 'center', marginBottom: 15, fontStyle: 'italic' },
+  scrollArea: { flexShrink: 1, marginBottom: 15 },
+  imageContainer: { width: '100%', height: 220, borderRadius: 15, overflow: 'hidden', marginBottom: 20, backgroundColor: '#f5f5f5' },
+  detailsImage: { width: '100%', height: '100%' },
+  commentBox: { backgroundColor: '#f5f5f5', padding: 15, borderRadius: 15, marginBottom: 15, borderWidth: 1, borderColor: '#eee' },
+  commentLabel: { fontSize: 12, fontWeight: 'bold', color: '#666', marginBottom: 5, textTransform: 'uppercase' },
+  commentText: { fontSize: 15, color: '#333', fontStyle: 'italic' },
+  encyclopediaSection: { marginTop: 10 },
+  encyclopediaHeader: { fontSize: 18, fontWeight: 'bold', color: '#2e7d32', marginBottom: 10, textAlign: 'center', borderBottomWidth: 1, borderBottomColor: '#eee', paddingBottom: 10 },
+  sectionSubtitle: { fontSize: 12, fontWeight: '800', color: '#2e7d32', marginTop: 10, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
+  sectionText: { fontSize: 14, color: '#444', lineHeight: 20, backgroundColor: '#F9FBE7', padding: 12, borderRadius: 12, overflow: 'hidden' },
+  actionButtonsRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#eee' },
+  actionBtn: { flex: 1, padding: 16, borderRadius: 15, alignItems: 'center' },
+  actionBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }
 });
